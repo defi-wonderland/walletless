@@ -1,17 +1,23 @@
-import type { Address, Chain, Hex } from "viem";
+import type { Account, Address, Chain, Hex } from "viem";
 
 /**
  * Configuration options for the E2E Provider
+ *
+ * This provider implements a "Man-in-the-Middle" pattern:
+ * - Read operations (eth_call, eth_getBalance) → forwarded to Anvil RPC
+ * - Write operations (eth_sendTransaction, eth_sign) → handled locally with signing logic
  */
 export type E2EProviderConfig = {
-    /** URL where wallet requests will be forwarded for e2e test interception */
-    interceptorUrl: string;
-    /** RPC URL for blockchain read operations (e.g., eth_call, eth_getBalance) */
-    rpcUrl?: string;
+    /** RPC URL for all blockchain operations (typically Anvil) */
+    rpcUrl: string;
     /** Chain configuration */
     chain: Chain;
-    /** Initial account address for the mock wallet */
-    mockAddress?: Address;
+    /**
+     * Account for signing transactions. Can be:
+     * - A private key hex string (will create a local account)
+     * - A viem Account object (for impersonation or custom accounts)
+     */
+    account: Hex | Account;
     /** Enable debug logging */
     debug?: boolean;
 };
@@ -43,26 +49,6 @@ export type JsonRpcError = {
     code: number;
     message: string;
     data?: unknown;
-};
-
-/**
- * Wallet request payload sent to the interceptor URL
- */
-export type InterceptedRequest = {
-    id: number;
-    method: string;
-    params?: unknown[];
-    timestamp: number;
-    chainId: number;
-};
-
-/**
- * Response from the interceptor URL
- */
-export type InterceptorResponse<T = unknown> = {
-    success: boolean;
-    result?: T;
-    error?: JsonRpcError;
 };
 
 /**
@@ -104,4 +90,40 @@ export type ProviderState = {
     accounts: Address[];
     chainId: number;
     isConnected: boolean;
+};
+
+/**
+ * Transaction request parameters for eth_sendTransaction
+ */
+export type TransactionRequest = {
+    from?: Address;
+    to?: Address;
+    gas?: Hex;
+    gasPrice?: Hex;
+    maxFeePerGas?: Hex;
+    maxPriorityFeePerGas?: Hex;
+    value?: Hex;
+    data?: Hex;
+    nonce?: Hex;
+};
+
+/**
+ * Typed data domain for EIP-712 signing
+ */
+export type TypedDataDomain = {
+    name?: string;
+    version?: string;
+    chainId?: number;
+    verifyingContract?: Address;
+    salt?: Hex;
+};
+
+/**
+ * Typed data structure for EIP-712 signing
+ */
+export type TypedData = {
+    domain: TypedDataDomain;
+    types: Record<string, Array<{ name: string; type: string }>>;
+    primaryType: string;
+    message: Record<string, unknown>;
 };

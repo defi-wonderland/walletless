@@ -1,62 +1,99 @@
-# @defi-wonderland/e2e-provider
+# @wonderland/e2e-connector
 
-Virtual EIP-1193 provider and Wagmi connector for E2E testing of Web3 applications.
+Lightweight E2E Provider for Web3 DApps - A virtual EIP-1193 provider that enables deterministic, high-performance E2E testing.
 
 ## Overview
 
-This library provides a virtual Ethereum provider that enables end-to-end testing of Web3 applications without requiring a real wallet extension. It intercepts wallet operations (signing, transactions) and forwards them to a configurable interceptor URL while routing read-only blockchain operations to an RPC endpoint.
+This library provides a **"Man-in-the-Middle" injected provider** that sits between your DApp and the network. Instead of interacting with a real wallet extension, the DApp interacts with our custom provider which implements the standard EIP-1193 interface.
 
-### Key Features
+### How It Works
 
-- **EIP-1193 Compatible**: Drop-in replacement for wallet providers
-- **Wagmi Integration**: Custom connector for seamless Wagmi v2 integration
-- **Request Interception**: Forward wallet operations to your test infrastructure
-- **RPC Routing**: Route read operations to a local fork or public RPC
-- **Full Control**: Programmatically control accounts, chains, and events
+```mermaid
+graph LR
+    DApp["DApp UI"]
+    CP1["E2E Provider"]
+    CP2["E2E Provider"]
+    SIGN["Sign logic / Impersonation"]
+    ANVIL["Anvil RPC"]
+
+    DApp -->|Read| CP1
+    CP1 -->|eth_call, eth_getBalance, ...| ANVIL
+
+    DApp -->|Write| CP2
+    CP2 -->|eth_sendTx, eth_sign, ...| SIGN
+    SIGN --> ANVIL
+```
+
+**Read operations** (`eth_call`, `eth_getBalance`, etc.) → Forwarded directly to Anvil RPC
+
+**Write operations** (`eth_sendTransaction`, `eth_sign`, etc.) → Routed to local signing logic, then forwarded to Anvil RPC
+
+This keeps **100% chain realism** while maintaining **full control** in tests.
+
+## Advantages
+
+-   **Incredible Test Speed**: No browser extension overhead, controlled RPC latency, fully virtualized wallet interactions
+-   **Framework Agnostic**: Works with Cypress, Playwright, Selenium, or any E2E testing tool
+-   **Zero External Dependencies**: Built entirely on viem types and native fetch
+-   **Total Control**: Simulate edge cases like RPC errors, specific error codes, delayed signatures, chain switching failures
+-   **CI/CD Friendly**: Runs effortlessly in headless browsers and Docker containers
 
 ## Installation
 
 ```bash
-pnpm add @defi-wonderland/e2e-provider
+pnpm add @wonderland/e2e-connector
 ```
 
 ## Usage
 
-### With Wagmi
+### With Wagmi (Recommended)
+
+The solution uses a standard Wagmi Connector factory, making it "Plug and Play". The DApp does not need to change its code logic, only its configuration:
 
 ```typescript
-import { e2eConnector } from "@defi-wonderland/e2e-provider";
+import { e2eConnector } from "@wonderland/e2e-connector";
 import { createConfig, http } from "wagmi";
-import { mainnet, sepolia } from "wagmi/chains";
+import { mainnet } from "wagmi/chains";
 
-const config = createConfig({
-    chains: [mainnet, sepolia],
-    connectors: [
-        e2eConnector({
-            interceptorUrl: "http://localhost:3001/wallet-intercept",
-            rpcUrl: "http://localhost:8545", // anvil fork
-            mockAddress: "0x1234567890123456789012345678901234567890",
-            debug: true,
-        }),
-    ],
+// Anvil's default test private key
+const TEST_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+const isE2E = process.env.NEXT_PUBLIC_E2E_CONNECTOR === "true";
+
+export const config = createConfig({
+    chains: [mainnet],
+    connectors: isE2E
+        ? [
+              e2eConnector({
+                  rpcUrl: "http://127.0.0.1:8545", // Anvil
+                  account: TEST_PRIVATE_KEY,
+                  chain: mainnet,
+              }),
+          ]
+        : [
+              /* real wallets */
+          ],
     transports: {
-        [mainnet.id]: http("http://localhost:8545"),
-        [sepolia.id]: http("http://localhost:8545"),
+        [mainnet.id]: http("http://127.0.0.1:8545"),
     },
 });
 ```
 
+✅ No browser extension  
+✅ No HTTP interception  
+✅ No mocks needed  
+✅ Pure Anvil execution
+
 ### Standalone Provider
 
 ```typescript
-import { createE2EProvider } from "@defi-wonderland/e2e-provider";
+import { createE2EProvider } from "@wonderland/e2e-connector";
 import { mainnet } from "viem/chains";
 
 const provider = createE2EProvider({
-    interceptorUrl: "http://localhost:3001/intercept",
-    rpcUrl: "http://localhost:8545",
+    rpcUrl: "http://127.0.0.1:8545",
     chain: mainnet,
-    mockAddress: "0x1234567890123456789012345678901234567890",
+    account: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     debug: true,
 });
 
@@ -64,14 +101,14 @@ const provider = createE2EProvider({
 const accounts = await provider.request({ method: "eth_requestAccounts" });
 const balance = await provider.request({
     method: "eth_getBalance",
-    params: ["0x1234...", "latest"],
+    params: [accounts[0], "latest"],
 });
 ```
 
 ### Test Control Functions
 
 ```typescript
-import { setAccounts, setChain, disconnect } from "@defi-wonderland/e2e-provider";
+import { disconnect, setAccounts, setChain } from "@wonderland/e2e-connector";
 
 // Update accounts during test
 setAccounts(provider, ["0xNewAddress..."]);
@@ -83,118 +120,109 @@ setChain(provider, 1); // mainnet
 disconnect(provider);
 ```
 
-## How It Works
+## Method Routing
 
-The E2E provider routes requests based on their type:
+### Read Methods → Anvil RPC
 
-### Read Methods → RPC URL
+These methods are forwarded directly to the configured RPC URL:
 
-These methods are forwarded to the configured RPC URL (or chain's default):
+-   `eth_call`, `eth_getBalance`, `eth_getCode`, `eth_getStorageAt`
+-   `eth_blockNumber`, `eth_getBlockByHash`, `eth_getBlockByNumber`
+-   `eth_getTransactionReceipt`, `eth_getTransactionByHash`
+-   `eth_gasPrice`, `eth_estimateGas`, `eth_feeHistory`
+-   `eth_getLogs`, `eth_getFilterLogs`
+-   And more...
 
-- `eth_call`, `eth_getBalance`, `eth_getCode`
-- `eth_blockNumber`, `eth_getBlockByHash`, `eth_getBlockByNumber`
-- `eth_getTransactionReceipt`, `eth_getTransactionByHash`
-- `eth_gasPrice`, `eth_estimateGas`, `eth_feeHistory`
-- And more...
+### Write Methods → Local Signing → Anvil RPC
 
-### Wallet Methods → Interceptor URL
+These methods are handled locally with viem's wallet client:
 
-These methods are forwarded to your test interceptor:
+-   `eth_sendTransaction` - Signed locally, sent to Anvil
+-   `personal_sign` - Signed locally
+-   `eth_signTypedData_v4` - Signed locally
+-   `eth_sign` - Signed locally
 
-- `eth_requestAccounts`, `eth_accounts`
-- `eth_sendTransaction`, `eth_sendRawTransaction`
-- `personal_sign`, `eth_signTypedData_v4`
-- `wallet_switchEthereumChain`, `wallet_addEthereumChain`
-- And more...
+### Wallet Methods → Local State
 
-## Interceptor API
+These methods are handled by local provider state:
 
-Your interceptor should handle POST requests with the following payload:
+-   `eth_accounts`, `eth_requestAccounts`
+-   `eth_chainId`, `net_version`
+-   `wallet_switchEthereumChain`, `wallet_addEthereumChain`
 
-```typescript
-type InterceptedRequest = {
-    id: number;
-    method: string;
-    params?: unknown[];
-    timestamp: number;
-    chainId: number;
-};
-```
+## Test Runner Integration
 
-And respond with:
+### Cypress Example
 
 ```typescript
-type InterceptorResponse<T> = {
-    success: boolean;
-    result?: T;
-    error?: {
-        code: number;
-        message: string;
-        data?: unknown;
-    };
-};
-```
+// cypress/e2e/swap.cy.ts
+describe("Token Swap", () => {
+    beforeEach(() => {
+        // Start Anvil fork before tests
+        cy.task("startAnvil", { forkUrl: process.env.MAINNET_RPC });
+    });
 
-### Example Interceptor (Express)
+    it("should swap tokens successfully", () => {
+        cy.visit("/swap");
 
-```typescript
-import express from "express";
+        // The E2E connector auto-connects
+        cy.get('[data-testid="token-input"]').type("1.0");
+        cy.get('[data-testid="swap-button"]').click();
 
-const app = express();
-app.use(express.json());
-
-app.post("/wallet-intercept", (req, res) => {
-    const { method, params } = req.body;
-
-    switch (method) {
-        case "eth_sendTransaction":
-            // Return a mock transaction hash
-            res.json({
-                success: true,
-                result: "0x1234567890abcdef...",
-            });
-            break;
-
-        case "personal_sign":
-            // Return a mock signature
-            res.json({
-                success: true,
-                result: "0xabcdef...",
-            });
-            break;
-
-        default:
-            res.json({
-                success: false,
-                error: { code: 4001, message: "User rejected" },
-            });
-    }
+        // Transaction is signed locally and sent to Anvil
+        cy.get('[data-testid="success-message"]').should("be.visible");
+    });
 });
+```
 
-app.listen(3001);
+### Playwright Example
+
+```typescript
+// tests/swap.spec.ts
+import { expect, test } from "@playwright/test";
+
+test("should swap tokens", async ({ page }) => {
+    await page.goto("/swap");
+
+    await page.fill('[data-testid="token-input"]', "1.0");
+    await page.click('[data-testid="swap-button"]');
+
+    // Transaction is automatically signed and executed
+    await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
+});
 ```
 
 ## Configuration
 
-### E2EConnectorParameters
+### E2EConnectorParameters (Wagmi)
 
-| Parameter        | Type              | Required | Description                                    |
-| ---------------- | ----------------- | -------- | ---------------------------------------------- |
-| `interceptorUrl` | `string`          | Yes      | URL to forward wallet requests                 |
-| `rpcUrl`         | `string`          | No       | RPC URL for read operations                    |
-| `chains`         | `readonly Chain[]`| No       | Supported chains (defaults to wagmi config)    |
-| `mockAddress`    | `Address`         | No       | Initial wallet address                         |
-| `debug`          | `boolean`         | No       | Enable debug logging                           |
+| Parameter | Type             | Required | Description                                 |
+| --------- | ---------------- | -------- | ------------------------------------------- |
+| `rpcUrl`  | `string`         | Yes      | Anvil RPC URL (e.g., http://127.0.0.1:8545) |
+| `account` | `Hex \| Account` | Yes      | Private key or viem Account for signing     |
+| `chain`   | `Chain`          | Yes      | Chain configuration                         |
+| `debug`   | `boolean`        | No       | Enable debug logging                        |
 
-### E2EProviderConfig
+### E2EProviderConfig (Standalone)
 
-| Parameter        | Type      | Required | Description                                    |
-| ---------------- | --------- | -------- | ---------------------------------------------- |
-| `interceptorUrl` | `string`  | Yes      | URL to forward wallet requests                 |
-| `rpcUrl`         | `string`  | No       | RPC URL for read operations                    |
-| `chain`          | `Chain`   | Yes      | Chain configuration                            |
-| `mockAddress`    | `Address` | No       | Initial wallet address                         |
-| `debug`          | `boolean` | No       | Enable debug logging                           |
+| Parameter | Type             | Required | Description                             |
+| --------- | ---------------- | -------- | --------------------------------------- |
+| `rpcUrl`  | `string`         | Yes      | Anvil RPC URL                           |
+| `chain`   | `Chain`          | Yes      | Chain configuration                     |
+| `account` | `Hex \| Account` | Yes      | Private key or viem Account for signing |
+| `debug`   | `boolean`        | No       | Enable debug logging                    |
+
+## Final Result
+
+With this library you get:
+
+-   A **real blockchain** (Anvil fork)
+-   A **virtual wallet** (local signing)
+-   A **deterministic environment** (no external dependencies)
+-   A **super-fast E2E stack** (no browser extension overhead)
+-   **Zero dependency on Metamask** or fake endpoints
+
+This is as close as you can get to **production behavior** with **testing-level control**.
 
 ## Development
 

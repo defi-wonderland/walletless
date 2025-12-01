@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { E2EProviderConfig } from "../src/types.js";
@@ -13,13 +13,15 @@ const mockChain = {
     },
 } as const;
 
-const mockAddress: Address = "0x1234567890123456789012345678901234567890";
+// Anvil's first test private key
+const TEST_PRIVATE_KEY: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+// Corresponding address: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+const TEST_ADDRESS: Address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 const baseConfig: E2EProviderConfig = {
-    interceptorUrl: "http://localhost:3001/intercept",
     rpcUrl: "http://localhost:8545",
     chain: mockChain,
-    mockAddress,
+    account: TEST_PRIVATE_KEY,
     debug: false,
 };
 
@@ -43,23 +45,12 @@ describe("createE2EProvider", () => {
             expect(provider.emit).toBeDefined();
         });
 
-        it("should initialize with mock address when provided", async () => {
+        it("should initialize with account address derived from private key", async () => {
             const provider = createE2EProvider(baseConfig);
 
             const accounts = await provider.request<Address[]>({ method: "eth_accounts" });
 
-            expect(accounts).toEqual([mockAddress]);
-        });
-
-        it("should initialize with empty accounts when no mock address provided", async () => {
-            const provider = createE2EProvider({
-                ...baseConfig,
-                mockAddress: undefined,
-            });
-
-            const accounts = await provider.request<Address[]>({ method: "eth_accounts" });
-
-            expect(accounts).toEqual([]);
+            expect(accounts).toEqual([TEST_ADDRESS]);
         });
     });
 
@@ -84,12 +75,12 @@ describe("createE2EProvider", () => {
     });
 
     describe("eth_requestAccounts", () => {
-        it("should return mock accounts when available", async () => {
+        it("should return account addresses", async () => {
             const provider = createE2EProvider(baseConfig);
 
             const accounts = await provider.request<Address[]>({ method: "eth_requestAccounts" });
 
-            expect(accounts).toEqual([mockAddress]);
+            expect(accounts).toEqual([TEST_ADDRESS]);
         });
 
         it("should emit connect event on first request", async () => {
@@ -114,15 +105,34 @@ describe("createE2EProvider", () => {
         });
     });
 
+    describe("wallet_switchEthereumChain", () => {
+        it("should update chain ID and emit chainChanged event", async () => {
+            const provider = createE2EProvider(baseConfig);
+            const chainChangedHandler = vi.fn();
+
+            provider.on("chainChanged", chainChangedHandler);
+            await provider.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0x89" }], // Polygon
+            });
+
+            expect(chainChangedHandler).toHaveBeenCalledWith("0x89");
+
+            // Verify the chain ID was updated
+            const chainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(chainId).toBe("0x89");
+        });
+    });
+
     describe("event handling", () => {
         it("should add and call event listeners", () => {
             const provider = createE2EProvider(baseConfig);
             const handler = vi.fn();
 
             provider.on("accountsChanged", handler);
-            provider.emit("accountsChanged", [mockAddress]);
+            provider.emit("accountsChanged", [TEST_ADDRESS]);
 
-            expect(handler).toHaveBeenCalledWith([mockAddress]);
+            expect(handler).toHaveBeenCalledWith([TEST_ADDRESS]);
         });
 
         it("should remove event listeners", () => {
@@ -131,7 +141,7 @@ describe("createE2EProvider", () => {
 
             provider.on("accountsChanged", handler);
             provider.removeListener("accountsChanged", handler);
-            provider.emit("accountsChanged", [mockAddress]);
+            provider.emit("accountsChanged", [TEST_ADDRESS]);
 
             expect(handler).not.toHaveBeenCalled();
         });
@@ -163,7 +173,7 @@ describe("createE2EProvider", () => {
             const provider = createE2EProvider(baseConfig);
             const balance = await provider.request<string>({
                 method: "eth_getBalance",
-                params: [mockAddress, "latest"],
+                params: [TEST_ADDRESS, "latest"],
             });
 
             expect(balance).toBe("0x100");
@@ -188,59 +198,11 @@ describe("createE2EProvider", () => {
             const provider = createE2EProvider(baseConfig);
             const result = await provider.request<string>({
                 method: "eth_call",
-                params: [{ to: mockAddress, data: "0x" }, "latest"],
+                params: [{ to: TEST_ADDRESS, data: "0x" }, "latest"],
             });
 
             expect(result).toBe("0xabcdef");
             expect(mockFetch).toHaveBeenCalled();
-        });
-    });
-
-    describe("wallet methods routing", () => {
-        it("should route eth_sendTransaction to interceptor", async () => {
-            const mockTxHash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-            const mockFetch = vi.spyOn(global, "fetch").mockResolvedValueOnce({
-                json: vi.fn().mockResolvedValueOnce({
-                    success: true,
-                    result: mockTxHash,
-                }),
-            } as unknown as Response);
-
-            const provider = createE2EProvider(baseConfig);
-            const txHash = await provider.request<string>({
-                method: "eth_sendTransaction",
-                params: [{ from: mockAddress, to: mockAddress, value: "0x1" }],
-            });
-
-            expect(txHash).toBe(mockTxHash);
-            expect(mockFetch).toHaveBeenCalledWith(
-                "http://localhost:3001/intercept",
-                expect.objectContaining({
-                    method: "POST",
-                }),
-            );
-        });
-
-        it("should route personal_sign to interceptor", async () => {
-            const mockSignature = "0xabcdef";
-            const mockFetch = vi.spyOn(global, "fetch").mockResolvedValueOnce({
-                json: vi.fn().mockResolvedValueOnce({
-                    success: true,
-                    result: mockSignature,
-                }),
-            } as unknown as Response);
-
-            const provider = createE2EProvider(baseConfig);
-            const signature = await provider.request<string>({
-                method: "personal_sign",
-                params: ["0x48656c6c6f", mockAddress],
-            });
-
-            expect(signature).toBe(mockSignature);
-            expect(mockFetch).toHaveBeenCalledWith(
-                "http://localhost:3001/intercept",
-                expect.anything(),
-            );
         });
     });
 
@@ -257,23 +219,16 @@ describe("createE2EProvider", () => {
             const provider = createE2EProvider(baseConfig);
 
             await expect(
-                provider.request({ method: "eth_getBalance", params: [mockAddress, "latest"] }),
+                provider.request({ method: "eth_getBalance", params: [TEST_ADDRESS, "latest"] }),
             ).rejects.toThrow("Invalid Request");
         });
 
-        it("should throw on interceptor error", async () => {
-            vi.spyOn(global, "fetch").mockResolvedValueOnce({
-                json: vi.fn().mockResolvedValueOnce({
-                    success: false,
-                    error: { code: 4001, message: "User rejected" },
-                }),
-            } as unknown as Response);
-
+        it("should throw on unsupported write method", async () => {
             const provider = createE2EProvider(baseConfig);
 
             await expect(
-                provider.request({ method: "eth_sendTransaction", params: [] }),
-            ).rejects.toThrow("User rejected");
+                provider.request({ method: "eth_signTransaction", params: [] }),
+            ).rejects.toThrow("Unsupported");
         });
     });
 });
@@ -282,7 +237,7 @@ describe("setAccounts", () => {
     it("should emit accountsChanged event", () => {
         const provider = createE2EProvider(baseConfig);
         const handler = vi.fn();
-        const newAccounts: Address[] = ["0xNewAddress1234567890123456789012345678"];
+        const newAccounts: Address[] = ["0xNewAddress1234567890123456789012345678" as Address];
 
         provider.on("accountsChanged", handler);
         setAccounts(provider, newAccounts);

@@ -9,13 +9,14 @@ export { createE2EProvider, setAccounts, setChain, disconnect } from "./provider
 export type {
     E2EProvider,
     E2EProviderConfig,
-    InterceptedRequest,
-    InterceptorResponse,
     JsonRpcError,
     JsonRpcRequest,
     JsonRpcResponse,
     ProviderEvents,
     ProviderState,
+    TransactionRequest,
+    TypedData,
+    TypedDataDomain,
 } from "./types.js";
 
 // Constants and utilities

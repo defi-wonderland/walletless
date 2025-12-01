@@ -1,14 +1,17 @@
-import type { Address, Hex } from "viem";
+import type { Account, Address, Hex } from "viem";
+import type { PrivateKeyAccount } from "viem/accounts";
+import { createWalletClient, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 import type {
     E2EProvider,
     E2EProviderConfig,
-    InterceptedRequest,
-    InterceptorResponse,
     JsonRpcRequest,
     JsonRpcResponse,
     ProviderEvents,
     ProviderState,
+    TransactionRequest,
+    TypedData,
 } from "./types.js";
 import { isReadMethod } from "./constants.js";
 
@@ -17,35 +20,47 @@ type EventListeners = {
 };
 
 /**
- * Creates an EIP-1193 compatible provider that intercepts wallet requests
- * and redirects read operations to a specified RPC URL.
+ * Creates an EIP-1193 compatible provider for E2E testing.
  *
- * This provider enables E2E testing by:
- * - Forwarding wallet operations (signing, transactions) to an interceptor URL
- * - Routing read-only operations (eth_call, eth_getBalance) to an RPC endpoint
- * - Maintaining local state for accounts and chain ID
+ * This provider implements a "Man-in-the-Middle" pattern:
+ * - READ operations (eth_call, eth_getBalance, etc.) → Forwarded directly to Anvil RPC
+ * - WRITE operations (eth_sendTransaction, eth_sign, etc.) → Handled locally with signing logic
+ *
+ * This keeps 100% chain realism while maintaining full control in tests.
  *
  * @example
  * ```ts
  * const provider = createE2EProvider({
- *   interceptorUrl: 'http://localhost:3001/intercept',
- *   rpcUrl: 'http://localhost:8545',
+ *   rpcUrl: 'http://127.0.0.1:8545', // Anvil
  *   chain: mainnet,
- *   mockAddress: '0x1234...',
+ *   account: '0x...privateKey', // or impersonated account
  *   debug: true,
- * });
+ * })
  *
  * // Use with wagmi or directly
- * const accounts = await provider.request({ method: 'eth_requestAccounts' });
+ * const accounts = await provider.request({ method: 'eth_requestAccounts' })
  * ```
  */
 export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
-    const { interceptorUrl, rpcUrl, chain, mockAddress, debug = false } = config;
+    const { rpcUrl, chain, account: accountConfig, debug = false } = config;
 
     let requestId = 0;
 
+    // Create account from private key or use provided account
+    const account: PrivateKeyAccount | Account =
+        typeof accountConfig === "string"
+            ? privateKeyToAccount(accountConfig as Hex)
+            : accountConfig;
+
+    // Create wallet client for signing operations with explicit account
+    const walletClient = createWalletClient({
+        account,
+        chain,
+        transport: http(rpcUrl),
+    });
+
     const state: ProviderState = {
-        accounts: mockAddress ? [mockAddress] : [],
+        accounts: [account.address],
         chainId: chain.id,
         isConnected: false,
     };
@@ -73,9 +88,9 @@ export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
     }
 
     /**
-     * Send a JSON-RPC request to a URL
+     * Send a JSON-RPC request to Anvil
      */
-    async function sendJsonRpc<T>(url: string, method: string, params?: unknown[]): Promise<T> {
+    async function sendJsonRpc<T>(method: string, params?: unknown[]): Promise<T> {
         const id = ++requestId;
         const request: JsonRpcRequest = {
             jsonrpc: "2.0",
@@ -84,9 +99,9 @@ export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
             id,
         };
 
-        log("Sending RPC request to", url, request);
+        log("Sending RPC request:", method, params);
 
-        const response = await fetch(url, {
+        const response = await fetch(rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(request),
@@ -105,56 +120,99 @@ export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
     }
 
     /**
-     * Send a request to the interceptor URL for e2e test handling
-     */
-    async function sendToInterceptor<T>(method: string, params?: unknown[]): Promise<T> {
-        const id = ++requestId;
-        const payload: InterceptedRequest = {
-            id,
-            method,
-            params,
-            timestamp: Date.now(),
-            chainId: state.chainId,
-        };
-
-        log("Sending to interceptor", payload);
-
-        const response = await fetch(interceptorUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
-
-        const data: InterceptorResponse<T> = (await response.json()) as InterceptorResponse<T>;
-
-        if (!data.success || data.error) {
-            const error = new Error(data.error?.message || "Interceptor request failed");
-            // @ts-expect-error - Adding code property to error
-            error.code = data.error?.code || 4001;
-            throw error;
-        }
-
-        return data.result as T;
-    }
-
-    /**
-     * Handle read methods by sending to RPC URL
+     * Handle read methods by sending to Anvil RPC
      */
     async function handleReadMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        const url = rpcUrl || chain.rpcUrls.default.http[0];
-
-        if (!url) {
-            throw new Error("No RPC URL configured for read methods");
-        }
-
-        return sendJsonRpc<T>(url, method, params);
+        return sendJsonRpc<T>(method, params);
     }
 
     /**
-     * Handle wallet methods locally or via interceptor
+     * Handle write operations with local signing
+     */
+    async function handleWriteMethod<T>(method: string, params?: unknown[]): Promise<T> {
+        log("Handling write method:", method, params);
+
+        switch (method) {
+            case "eth_sendTransaction": {
+                const txParams = params?.[0] as TransactionRequest;
+
+                // Build transaction request with proper typing
+                const txRequest = {
+                    chain,
+                    to: txParams.to,
+                    value: txParams.value ? BigInt(txParams.value) : undefined,
+                    data: txParams.data,
+                    gas: txParams.gas ? BigInt(txParams.gas) : undefined,
+                    nonce: txParams.nonce ? parseInt(txParams.nonce, 16) : undefined,
+                    // Gas pricing - only one strategy should be used
+                    ...(txParams.maxFeePerGas
+                        ? {
+                              maxFeePerGas: BigInt(txParams.maxFeePerGas),
+                              maxPriorityFeePerGas: txParams.maxPriorityFeePerGas
+                                  ? BigInt(txParams.maxPriorityFeePerGas)
+                                  : undefined,
+                          }
+                        : txParams.gasPrice
+                          ? { gasPrice: BigInt(txParams.gasPrice) }
+                          : {}),
+                };
+
+                const hash = await walletClient.sendTransaction(txRequest);
+                return hash as T;
+            }
+
+            case "personal_sign": {
+                // personal_sign params: [message, address]
+                const message = params?.[0] as Hex;
+                const signature = await walletClient.signMessage({
+                    message: { raw: message },
+                });
+                return signature as T;
+            }
+
+            case "eth_sign": {
+                // eth_sign params: [address, message]
+                const ethSignMessage = params?.[1] as Hex;
+                const ethSignature = await walletClient.signMessage({
+                    message: { raw: ethSignMessage },
+                });
+                return ethSignature as T;
+            }
+
+            case "eth_signTypedData":
+            case "eth_signTypedData_v3":
+            case "eth_signTypedData_v4": {
+                // params: [address, typedData]
+                const typedDataJson = params?.[1] as string | TypedData;
+                const typedData: TypedData =
+                    typeof typedDataJson === "string"
+                        ? (JSON.parse(typedDataJson) as TypedData)
+                        : typedDataJson;
+
+                const typedDataSignature = await walletClient.signTypedData({
+                    domain: typedData.domain,
+                    types: typedData.types,
+                    primaryType: typedData.primaryType,
+                    message: typedData.message,
+                });
+                return typedDataSignature as T;
+            }
+
+            case "eth_sendRawTransaction": {
+                // Forward raw transaction to Anvil
+                return sendJsonRpc<T>(method, params);
+            }
+
+            default:
+                throw new Error(`Unsupported write method: ${method}`);
+        }
+    }
+
+    /**
+     * Handle wallet/account methods
      */
     async function handleWalletMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        log("Handling wallet method", method, params);
+        log("Handling wallet method:", method, params);
 
         switch (method) {
             case "eth_accounts":
@@ -167,38 +225,68 @@ export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
                 return state.chainId.toString() as T;
 
             case "eth_requestAccounts": {
-                if (state.accounts.length > 0) {
-                    if (!state.isConnected) {
-                        state.isConnected = true;
-                        emit("connect", { chainId: `0x${state.chainId.toString(16)}` as Hex });
-                    }
-                    return state.accounts as T;
+                if (!state.isConnected) {
+                    state.isConnected = true;
+                    emit("connect", { chainId: `0x${state.chainId.toString(16)}` as Hex });
                 }
-                // Request accounts from interceptor
-                const accounts = await sendToInterceptor<Address[]>(method, params);
-                state.accounts = accounts;
-                state.isConnected = true;
-                emit("connect", { chainId: `0x${state.chainId.toString(16)}` as Hex });
-                emit("accountsChanged", accounts);
-                return accounts as T;
+                return state.accounts as T;
             }
 
             case "wallet_switchEthereumChain": {
                 const [{ chainId }] = params as [{ chainId: Hex }];
                 const newChainId = parseInt(chainId, 16);
-
-                // Notify interceptor about chain switch
-                await sendToInterceptor(method, params);
-
                 state.chainId = newChainId;
                 emit("chainChanged", chainId);
                 return null as T;
             }
 
-            // Forward all other wallet methods to interceptor
+            case "wallet_addEthereumChain": {
+                // In E2E testing, we just accept the chain addition
+                return null as T;
+            }
+
+            case "wallet_requestPermissions":
+            case "wallet_getPermissions": {
+                // Return mock permissions
+                return [{ parentCapability: "eth_accounts" }] as T;
+            }
+
             default:
-                return sendToInterceptor<T>(method, params);
+                throw new Error(`Unsupported wallet method: ${method}`);
         }
+    }
+
+    /**
+     * Check if method is a write/signing operation
+     */
+    function isWriteMethod(method: string): boolean {
+        return [
+            "eth_sendTransaction",
+            "eth_sendRawTransaction",
+            "eth_signTransaction",
+            "eth_sign",
+            "personal_sign",
+            "eth_signTypedData",
+            "eth_signTypedData_v3",
+            "eth_signTypedData_v4",
+        ].includes(method);
+    }
+
+    /**
+     * Check if method is a wallet/account operation
+     */
+    function isWalletMethod(method: string): boolean {
+        return [
+            "eth_accounts",
+            "eth_chainId",
+            "net_version",
+            "eth_requestAccounts",
+            "wallet_switchEthereumChain",
+            "wallet_addEthereumChain",
+            "wallet_requestPermissions",
+            "wallet_getPermissions",
+            "wallet_revokePermissions",
+        ].includes(method);
     }
 
     /**
@@ -213,12 +301,25 @@ export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
     }): Promise<T> {
         log("Request:", method, params);
 
-        // Route to appropriate handler
+        // Route to appropriate handler based on method type
+        // Wallet methods first (they handle local state like chainId, accounts)
+        if (isWalletMethod(method)) {
+            return handleWalletMethod<T>(method, params);
+        }
+
+        // Write/signing methods
+        if (isWriteMethod(method)) {
+            return handleWriteMethod<T>(method, params);
+        }
+
+        // Read methods go to RPC
         if (isReadMethod(method)) {
             return handleReadMethod<T>(method, params);
         }
 
-        return handleWalletMethod<T>(method, params);
+        // Fallback: try as read method (for any unknown methods)
+        log("Unknown method, forwarding to RPC:", method);
+        return sendJsonRpc<T>(method, params);
     }
 
     /**

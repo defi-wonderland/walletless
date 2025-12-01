@@ -1,4 +1,5 @@
-import type { Address, Chain } from "viem";
+import type { Account, Address, Chain, Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { createConnector } from "wagmi";
 
 import type { E2EProvider, E2EProviderConfig } from "./types.js";
@@ -13,14 +14,16 @@ import {
  * Parameters for creating an E2E test connector
  */
 export type E2EConnectorParameters = {
-    /** URL where wallet requests will be forwarded for e2e test interception */
-    interceptorUrl: string;
-    /** RPC URL for blockchain read operations. Falls back to chain's default RPC */
-    rpcUrl?: string;
-    /** Supported chains */
-    chains?: readonly Chain[];
-    /** Initial mock address for the wallet */
-    mockAddress?: Address;
+    /** RPC URL for blockchain operations (typically Anvil at http://127.0.0.1:8545) */
+    rpcUrl: string;
+    /**
+     * Account for signing transactions. Can be:
+     * - A private key hex string (e.g., '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')
+     * - A viem Account object (for impersonation or custom accounts)
+     */
+    account: Hex | Account;
+    /** Chain configuration (e.g., mainnet fork) */
+    chain: Chain;
     /** Enable debug logging */
     debug?: boolean;
 };
@@ -28,28 +31,33 @@ export type E2EConnectorParameters = {
 /**
  * Creates a custom Wagmi connector for e2e testing.
  *
- * This connector intercepts all wallet requests and forwards them to a specified
- * interceptor URL, allowing e2e tests to mock wallet responses. Read operations
- * can be optionally redirected to a custom RPC URL or fork.
+ * This connector implements a "Virtual Wallet" pattern that:
+ * - Routes READ operations (eth_call, eth_getBalance) directly to Anvil RPC
+ * - Handles WRITE operations (eth_sendTransaction, eth_sign) with local signing
+ *
+ * This keeps 100% chain realism while providing testing-level control.
  *
  * @example
  * ```ts
  * import { e2eConnector } from '@defi-wonderland/e2e-provider'
  * import { createConfig, http } from 'wagmi'
- * import { sepolia } from 'wagmi/chains'
+ * import { mainnet } from 'wagmi/chains'
+ *
+ * // Using a private key (Anvil's default test account)
+ * const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
  *
  * const config = createConfig({
- *   chains: [sepolia],
+ *   chains: [mainnet],
  *   connectors: [
  *     e2eConnector({
- *       interceptorUrl: 'http://localhost:3001/wallet-intercept',
- *       rpcUrl: 'http://localhost:8545', // anvil fork
- *       mockAddress: '0x1234...',
+ *       rpcUrl: 'http://127.0.0.1:8545', // Anvil
+ *       account: TEST_PRIVATE_KEY,
+ *       chain: mainnet,
  *       debug: true,
  *     }),
  *   ],
  *   transports: {
- *     [sepolia.id]: http('http://localhost:8545'),
+ *     [mainnet.id]: http('http://127.0.0.1:8545'),
  *   },
  * })
  * ```
@@ -57,51 +65,44 @@ export type E2EConnectorParameters = {
 export function e2eConnector(
     parameters: E2EConnectorParameters,
 ): ReturnType<typeof createConnector<E2EProvider>> {
-    const { interceptorUrl, rpcUrl, chains: paramChains, mockAddress, debug = false } = parameters;
+    const { rpcUrl, account: accountConfig, chain, debug = false } = parameters;
+
+    // Resolve account from private key or use provided account
+    const account: Account =
+        typeof accountConfig === "string"
+            ? privateKeyToAccount(accountConfig as Hex)
+            : accountConfig;
 
     let provider: E2EProvider | undefined;
-    let currentChain: Chain | undefined;
 
     return createConnector<E2EProvider>((config) => {
-        const chains = paramChains || config.chains;
-
         return {
-            id: "e2e-test-connector",
-            name: "E2E Test Connector",
-            type: "e2e-test",
+            id: "e2e-connector",
+            name: "E2E Connector",
+            type: "e2e",
 
             async setup(): Promise<void> {
-                currentChain = chains[0];
+                // No setup needed
             },
 
             async connect({ chainId } = {}): Promise<{
                 accounts: readonly Address[];
                 chainId: number;
             }> {
-                const targetChainId = chainId || chains[0]?.id;
-                const chain = chains.find((c) => c.id === targetChainId) || chains[0];
-
-                if (!chain) {
-                    throw new Error("No chains configured");
-                }
-
-                currentChain = chain;
+                const targetChainId = chainId || chain.id;
 
                 const connectorConfig: E2EProviderConfig = {
-                    interceptorUrl,
                     rpcUrl,
                     chain,
-                    mockAddress,
+                    account: accountConfig,
                     debug,
                 };
 
                 provider = createE2EProvider(connectorConfig);
 
-                const accounts = mockAddress ? [mockAddress] : [];
-
                 return {
-                    accounts,
-                    chainId: chain.id,
+                    accounts: [account.address],
+                    chainId: targetChainId,
                 };
             },
 
@@ -113,15 +114,11 @@ export function e2eConnector(
             },
 
             async getAccounts(): Promise<readonly Address[]> {
-                if (!provider) return [];
-
-                return provider.request<Address[]>({
-                    method: "eth_accounts",
-                });
+                return [account.address];
             },
 
             async getChainId(): Promise<number> {
-                if (!provider) return chains[0]?.id || 1;
+                if (!provider) return chain.id;
 
                 const chainIdHex = await provider.request<string>({
                     method: "eth_chainId",
@@ -131,34 +128,25 @@ export function e2eConnector(
             },
 
             async getProvider(): Promise<E2EProvider> {
-                if (!provider && currentChain) {
+                if (!provider) {
                     const connectorConfig: E2EProviderConfig = {
-                        interceptorUrl,
                         rpcUrl,
-                        chain: currentChain,
-                        mockAddress,
+                        chain,
+                        account: accountConfig,
                         debug,
                     };
                     provider = createE2EProvider(connectorConfig);
                 }
 
-                return provider!;
+                return provider;
             },
 
             async isAuthorized(): Promise<boolean> {
-                if (!provider) return false;
-
-                const accounts = await this.getAccounts();
-                return accounts.length > 0;
+                // Always authorized in E2E mode
+                return true;
             },
 
             async switchChain({ chainId }): Promise<Chain> {
-                const chain = chains.find((c) => c.id === chainId);
-
-                if (!chain) {
-                    throw new Error(`Chain ${chainId} not found`);
-                }
-
                 if (provider) {
                     await provider.request({
                         method: "wallet_switchEthereumChain",
@@ -167,9 +155,15 @@ export function e2eConnector(
                     setChain(provider, chainId);
                 }
 
-                currentChain = chain;
+                config.emitter.emit("change", { chainId });
 
-                return chain;
+                // Return the chain config - in E2E mode we accept any chain
+                return {
+                    id: chainId,
+                    name: `Chain ${chainId}`,
+                    nativeCurrency: chain.nativeCurrency,
+                    rpcUrls: chain.rpcUrls,
+                };
             },
 
             onAccountsChanged(accounts): void {
