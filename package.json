@@ -55,7 +55,7 @@
     },
     "dependencies": {
         "viem": "2.21.4",
-        "wagmi": "2.12.17"
+        "wagmi": "2.19.5"
     },
     "devDependencies": {
         "@commitlint/config-conventional": "19.4.1",
@@ -63,7 +63,7 @@
         "@types/node": "20.3.1",
         "@typescript-eslint/eslint-plugin": "7.18.0",
         "@typescript-eslint/parser": "7.18.0",
-        "@vitest/coverage-v8": "2.1.9",
+        "@vitest/coverage-v8": "4.0.15",
         "commitlint": "19.4.1",
         "eslint": "8.56.0",
         "eslint-config-prettier": "9.1.0",
@@ -73,7 +73,7 @@
         "prettier": "3.3.3",
         "sort-package-json": "2.10.1",
         "typescript": "5.5.4",
-        "vitest": "2.1.9"
+        "vitest": "4.0.15"
     },
     "peerDependencies": {
         "viem": ">=2.0.0",
