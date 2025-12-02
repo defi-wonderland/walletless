@@ -13,7 +13,14 @@ import type {
     TransactionRequest,
     TypedData,
 } from "./types.js";
-import { isReadMethod } from "./constants.js";
+import {
+    DEFAULT_ANVIL_PRIVATE_KEY,
+    DEFAULT_ANVIL_RPC_URL,
+    DEFAULT_CHAIN,
+    isReadMethod,
+    isWalletMethod,
+    isWriteMethod,
+} from "./constants.js";
 
 type EventListeners = {
     [K in keyof ProviderEvents]: Set<ProviderEvents[K]>;
@@ -41,8 +48,13 @@ type EventListeners = {
  * const accounts = await provider.request({ method: 'eth_requestAccounts' })
  * ```
  */
-export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
-    const { rpcUrl, chain, account: accountConfig, debug = false } = config;
+export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
+    const {
+        rpcUrl = DEFAULT_ANVIL_RPC_URL,
+        chain = DEFAULT_CHAIN,
+        account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
+        debug = false,
+    } = config;
 
     let requestId = 0;
 
@@ -254,39 +266,6 @@ export function createE2EProvider(config: E2EProviderConfig): E2EProvider {
             default:
                 throw new Error(`Unsupported wallet method: ${method}`);
         }
-    }
-
-    /**
-     * Check if method is a write/signing operation
-     */
-    function isWriteMethod(method: string): boolean {
-        return [
-            "eth_sendTransaction",
-            "eth_sendRawTransaction",
-            "eth_signTransaction",
-            "eth_sign",
-            "personal_sign",
-            "eth_signTypedData",
-            "eth_signTypedData_v3",
-            "eth_signTypedData_v4",
-        ].includes(method);
-    }
-
-    /**
-     * Check if method is a wallet/account operation
-     */
-    function isWalletMethod(method: string): boolean {
-        return [
-            "eth_accounts",
-            "eth_chainId",
-            "net_version",
-            "eth_requestAccounts",
-            "wallet_switchEthereumChain",
-            "wallet_addEthereumChain",
-            "wallet_requestPermissions",
-            "wallet_getPermissions",
-            "wallet_revokePermissions",
-        ].includes(method);
     }
 
     /**

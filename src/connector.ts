@@ -3,6 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { createConnector } from "wagmi";
 
 import type { E2EProvider, E2EProviderConfig } from "./types.js";
+import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_ANVIL_RPC_URL, DEFAULT_CHAIN } from "./constants.js";
 import {
     createE2EProvider,
     disconnect as disconnectProvider,
@@ -14,16 +15,16 @@ import {
  * Parameters for creating an E2E test connector
  */
 export type E2EConnectorParameters = {
-    /** RPC URL for blockchain operations (typically Anvil at http://127.0.0.1:8545) */
-    rpcUrl: string;
+    /** RPC URL for blockchain operations (default: http://127.0.0.1:8545) */
+    rpcUrl?: string;
     /**
      * Account for signing transactions. Can be:
-     * - A private key hex string (e.g., '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')
+     * - A private key hex string (default: Anvil's first test account)
      * - A viem Account object (for impersonation or custom accounts)
      */
-    account: Hex | Account;
-    /** Chain configuration (e.g., mainnet fork) */
-    chain: Chain;
+    account?: Hex | Account;
+    /** Chain configuration (default: mainnet) */
+    chain?: Chain;
     /** Enable debug logging */
     debug?: boolean;
 };
@@ -43,15 +44,22 @@ export type E2EConnectorParameters = {
  * import { createConfig, http } from 'wagmi'
  * import { mainnet } from 'wagmi/chains'
  *
- * // Using a private key (Anvil's default test account)
- * const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
- *
+ * // Zero-config usage with Anvil defaults (mainnet fork, first test account)
  * const config = createConfig({
+ *   chains: [mainnet],
+ *   connectors: [e2eConnector()],
+ *   transports: {
+ *     [mainnet.id]: http('http://127.0.0.1:8545'),
+ *   },
+ * })
+ *
+ * // Or with custom configuration
+ * const customConfig = createConfig({
  *   chains: [mainnet],
  *   connectors: [
  *     e2eConnector({
- *       rpcUrl: 'http://127.0.0.1:8545', // Anvil
- *       account: TEST_PRIVATE_KEY,
+ *       rpcUrl: 'http://127.0.0.1:8545',
+ *       account: '0xYourPrivateKey...',
  *       chain: mainnet,
  *       debug: true,
  *     }),
@@ -63,9 +71,14 @@ export type E2EConnectorParameters = {
  * ```
  */
 export function e2eConnector(
-    parameters: E2EConnectorParameters,
+    parameters: E2EConnectorParameters = {},
 ): ReturnType<typeof createConnector<E2EProvider>> {
-    const { rpcUrl, account: accountConfig, chain, debug = false } = parameters;
+    const {
+        rpcUrl = DEFAULT_ANVIL_RPC_URL,
+        account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
+        chain = DEFAULT_CHAIN,
+        debug = false,
+    } = parameters;
 
     // Resolve account from private key or use provided account
     const account: Account =

@@ -20,5 +20,15 @@ export type {
 } from "./types.js";
 
 // Constants and utilities
-export { isReadMethod, isWalletMethod, READ_METHODS, WALLET_METHODS } from "./constants.js";
-export type { ReadMethod, WalletMethod } from "./constants.js";
+export {
+    DEFAULT_ANVIL_PRIVATE_KEY,
+    DEFAULT_ANVIL_RPC_URL,
+    DEFAULT_CHAIN,
+    isReadMethod,
+    isWalletMethod,
+    isWriteMethod,
+    READ_METHODS,
+    WALLET_METHODS,
+    WRITE_METHODS,
+} from "./constants.js";
+export type { ReadMethod, WalletMethod, WriteMethod } from "./constants.js";

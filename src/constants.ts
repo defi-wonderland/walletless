@@ -1,3 +1,16 @@
+import type { Hex } from "viem";
+import { mainnet } from "viem/chains";
+
+/** Anvil's default RPC URL */
+export const DEFAULT_ANVIL_RPC_URL = "http://127.0.0.1:8545";
+
+/** Anvil's first default test private key */
+export const DEFAULT_ANVIL_PRIVATE_KEY: Hex =
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+/** Default chain configuration */
+export const DEFAULT_CHAIN = mainnet;
+
 /**
  * RPC methods that read data from the blockchain
  * These can be safely redirected to a public/custom RPC URL
@@ -55,42 +68,42 @@ export const READ_METHODS = [
 ] as const;
 
 /**
- * RPC methods that require wallet interaction
- * These should be sent to the interceptor URL for e2e tests
+ * RPC methods that handle wallet state (accounts, chain, permissions)
+ * These are handled locally by the provider
  */
 export const WALLET_METHODS = [
-    // Account methods
-    "eth_requestAccounts",
     "eth_accounts",
+    "eth_chainId",
+    "net_version",
+    "eth_requestAccounts",
+    "wallet_switchEthereumChain",
+    "wallet_addEthereumChain",
     "wallet_requestPermissions",
     "wallet_getPermissions",
     "wallet_revokePermissions",
-
-    // Signing methods
-    "eth_sign",
-    "eth_signTypedData",
-    "eth_signTypedData_v3",
-    "eth_signTypedData_v4",
-    "personal_sign",
-
-    // Transaction methods
-    "eth_sendTransaction",
-    "eth_sendRawTransaction",
-
-    // Chain/Network methods
-    "wallet_switchEthereumChain",
-    "wallet_addEthereumChain",
-
-    // Asset methods
     "wallet_watchAsset",
-
-    // Misc wallet methods
     "wallet_scanQRCode",
     "wallet_registerOnboarding",
 ] as const;
 
+/**
+ * RPC methods that require signing or write operations
+ * These are handled locally with the wallet client
+ */
+export const WRITE_METHODS = [
+    "eth_sendTransaction",
+    "eth_sendRawTransaction",
+    "eth_signTransaction",
+    "eth_sign",
+    "personal_sign",
+    "eth_signTypedData",
+    "eth_signTypedData_v3",
+    "eth_signTypedData_v4",
+] as const;
+
 export type ReadMethod = (typeof READ_METHODS)[number];
 export type WalletMethod = (typeof WALLET_METHODS)[number];
+export type WriteMethod = (typeof WRITE_METHODS)[number];
 
 /**
  * Check if a method is a read-only blockchain method
@@ -100,8 +113,15 @@ export function isReadMethod(method: string): method is ReadMethod {
 }
 
 /**
- * Check if a method is a wallet interaction method
+ * Check if a method is a wallet state method
  */
 export function isWalletMethod(method: string): method is WalletMethod {
     return WALLET_METHODS.includes(method as WalletMethod);
+}
+
+/**
+ * Check if a method is a write/signing operation
+ */
+export function isWriteMethod(method: string): method is WriteMethod {
+    return WRITE_METHODS.includes(method as WriteMethod);
 }

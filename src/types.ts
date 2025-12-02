@@ -8,17 +8,17 @@ import type { Account, Address, Chain, Hex } from "viem";
  * - Write operations (eth_sendTransaction, eth_sign) → handled locally with signing logic
  */
 export type E2EProviderConfig = {
-    /** RPC URL for all blockchain operations (typically Anvil) */
-    rpcUrl: string;
-    /** Chain configuration */
-    chain: Chain;
+    /** RPC URL for all blockchain operations (default: http://127.0.0.1:8545) */
+    rpcUrl?: string;
+    /** Chain configuration (default: mainnet) */
+    chain?: Chain;
     /**
      * Account for signing transactions. Can be:
-     * - A private key hex string (will create a local account)
+     * - A private key hex string (default: Anvil's first test account)
      * - A viem Account object (for impersonation or custom accounts)
      */
-    account: Hex | Account;
-    /** Enable debug logging */
+    account?: Hex | Account;
+    /** Enable debug logging (default: false) */
     debug?: boolean;
 };
 

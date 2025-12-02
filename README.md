@@ -55,21 +55,12 @@ import { e2eConnector } from "@wonderland/e2e-connector";
 import { createConfig, http } from "wagmi";
 import { mainnet } from "wagmi/chains";
 
-// Anvil's default test private key
-const TEST_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-
 const isE2E = process.env.CI === "true";
 
 export const config = createConfig({
     chains: [mainnet],
     connectors: isE2E
-        ? [
-              e2eConnector({
-                  rpcUrl: "http://127.0.0.1:8545", // Anvil
-                  account: TEST_PRIVATE_KEY,
-                  chain: mainnet,
-              }),
-          ]
+        ? [e2eConnector()]
         : [
               /* real wallets */
           ],
@@ -79,10 +70,28 @@ export const config = createConfig({
 });
 ```
 
-✅ No browser extension  
-✅ No HTTP interception  
-✅ No mocks needed  
-✅ Pure Anvil execution
+#### Custom Configuration
+
+```typescript
+import { e2eConnector } from "@wonderland/e2e-connector";
+import { createConfig, http } from "wagmi";
+import { optimism } from "wagmi/chains";
+
+export const config = createConfig({
+    chains: [optimism],
+    connectors: [
+        e2eConnector({
+            rpcUrl: "http://127.0.0.1:8545",
+            account: "0xYourPrivateKey...",
+            chain: optimism,
+            debug: true,
+        }),
+    ],
+    transports: {
+        [optimism.id]: http("http://127.0.0.1:8545"),
+    },
+});
+```
 
 ### Standalone Provider
 
@@ -90,12 +99,7 @@ export const config = createConfig({
 import { createE2EProvider } from "@wonderland/e2e-connector";
 import { mainnet } from "viem/chains";
 
-const provider = createE2EProvider({
-    rpcUrl: "http://127.0.0.1:8545",
-    chain: mainnet,
-    account: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    debug: true,
-});
+const provider = createE2EProvider();
 
 // Use the provider directly
 const accounts = await provider.request({ method: "eth_requestAccounts" });
@@ -196,12 +200,14 @@ test("should swap tokens", async ({ page }) => {
 
 ### E2EConnectorParameters (Wagmi)
 
-| Parameter | Type             | Required | Description                                 |
-| --------- | ---------------- | -------- | ------------------------------------------- |
-| `rpcUrl`  | `string`         | Yes      | Anvil RPC URL (e.g., http://127.0.0.1:8545) |
-| `account` | `Hex \| Account` | Yes      | Private key or viem Account for signing     |
-| `chain`   | `Chain`          | Yes      | Chain configuration                         |
-| `debug`   | `boolean`        | No       | Enable debug logging                        |
+All parameters are optional with sensible Anvil defaults:
+
+| Parameter | Type             | Default                        | Description                             |
+| --------- | ---------------- | ------------------------------ | --------------------------------------- |
+| `rpcUrl`  | `string`         | `http://127.0.0.1:8545`        | Anvil RPC URL                           |
+| `account` | `Hex \| Account` | Anvil's first test private key | Private key or viem Account for signing |
+| `chain`   | `Chain`          | `mainnet`                      | Chain configuration                     |
+| `debug`   | `boolean`        | `false`                        | Enable debug logging                    |
 
 ### E2EProviderConfig (Standalone)
 
