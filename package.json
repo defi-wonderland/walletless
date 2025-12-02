@@ -82,5 +82,12 @@
     "packageManager": "pnpm@9.7.1",
     "engines": {
         "node": ">=20"
+    },
+    "pnpm": {
+        "overrides": {
+            "esbuild@<=0.24.2": ">=0.25.0",
+            "@metamask/sdk-communication-layer@>=0.16.0 <=0.33.0": ">=0.33.1",
+            "@metamask/sdk@>=0.16.0 <=0.33.0": ">=0.33.1"
+        }
     }
 }
