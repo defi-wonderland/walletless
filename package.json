@@ -1,5 +1,5 @@
 {
-    "name": "@wonderland/e2e-provider",
+    "name": "@wonderland/walletless",
     "version": "0.0.1",
     "private": false,
     "description": "Virtual EIP-1193 provider for E2E testing with Wagmi connector",
@@ -12,10 +12,10 @@
         "provider",
         "eip-1193"
     ],
-    "homepage": "https://github.com/defi-wonderland/e2e-provider#readme",
+    "homepage": "https://github.com/defi-wonderland/walletless#readme",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/defi-wonderland/e2e-provider.git"
+        "url": "git+https://github.com/defi-wonderland/walletless.git"
     },
     "license": "MIT",
     "author": "Wonderland",

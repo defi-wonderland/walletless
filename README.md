@@ -1,4 +1,4 @@
-# @wonderland/e2e-connector
+# @wonderland/walletless
 
 Lightweight E2E Provider for Web3 DApps - A virtual EIP-1193 provider that enables deterministic, high-performance E2E testing.
 
@@ -41,7 +41,7 @@ This keeps **100% chain realism** while maintaining **full control** in tests.
 ## Installation
 
 ```bash
-pnpm add @wonderland/e2e-connector
+pnpm add @wonderland/walletless
 ```
 
 ## Usage
@@ -51,7 +51,7 @@ pnpm add @wonderland/e2e-connector
 The solution uses a standard Wagmi Connector factory, making it "Plug and Play". The DApp does not need to change its code logic, only its configuration:
 
 ```typescript
-import { e2eConnector } from "@wonderland/e2e-connector";
+import { e2eConnector } from "@wonderland/walletless";
 import { createConfig, http } from "wagmi";
 import { mainnet } from "wagmi/chains";
 
@@ -73,7 +73,7 @@ export const config = createConfig({
 #### Custom Configuration
 
 ```typescript
-import { e2eConnector } from "@wonderland/e2e-connector";
+import { e2eConnector } from "@wonderland/walletless";
 import { createConfig, http } from "wagmi";
 import { optimism } from "wagmi/chains";
 
@@ -96,7 +96,7 @@ export const config = createConfig({
 ### Standalone Provider
 
 ```typescript
-import { createE2EProvider } from "@wonderland/e2e-connector";
+import { createE2EProvider } from "@wonderland/walletless";
 import { mainnet } from "viem/chains";
 
 const provider = createE2EProvider();
@@ -112,7 +112,7 @@ const balance = await provider.request({
 ### Test Control Functions
 
 ```typescript
-import { disconnect, setAccounts, setChain } from "@wonderland/e2e-connector";
+import { disconnect, setAccounts, setChain } from "@wonderland/walletless";
 
 // Update accounts during test
 setAccounts(provider, ["0xNewAddress..."]);
