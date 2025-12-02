@@ -72,7 +72,7 @@ export type E2EConnectorParameters = {
  */
 export function e2eConnector(
     parameters: E2EConnectorParameters = {},
-): ReturnType<typeof createConnector<E2EProvider>> {
+): ReturnType<typeof createConnector> {
     const {
         rpcUrl = DEFAULT_ANVIL_RPC_URL,
         account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
@@ -88,118 +88,117 @@ export function e2eConnector(
 
     let provider: E2EProvider | undefined;
 
-    return createConnector<E2EProvider>((config) => {
-        return {
-            id: "e2e-connector",
-            name: "E2E Connector",
-            type: "e2e",
+    return createConnector((config) => ({
+        id: "walletless-connector",
+        name: "Walletless Connector",
+        type: "walletless",
 
-            async setup(): Promise<void> {
-                // No setup needed
-            },
+        async setup(): Promise<void> {
+            // No setup needed
+        },
 
-            async connect({ chainId } = {}): Promise<{
-                accounts: readonly Address[];
-                chainId: number;
-            }> {
-                const targetChainId = chainId || chain.id;
+        // @ts-expect-error - wagmi's withCapabilities conditional type is not satisfiable without runtime checks
+        async connect({ chainId }: { chainId?: number } = {}): Promise<{
+            accounts: readonly Address[];
+            chainId: number;
+        }> {
+            const targetChainId = chainId ?? chain.id;
 
+            const connectorConfig: E2EProviderConfig = {
+                rpcUrl,
+                chain,
+                account: accountConfig,
+                debug,
+            };
+
+            provider = createE2EProvider(connectorConfig);
+
+            return {
+                accounts: [account.address],
+                chainId: targetChainId,
+            };
+        },
+
+        async disconnect(): Promise<void> {
+            if (provider) {
+                disconnectProvider(provider);
+            }
+            provider = undefined;
+        },
+
+        async getAccounts(): Promise<readonly Address[]> {
+            return [account.address];
+        },
+
+        async getChainId(): Promise<number> {
+            if (!provider) return chain.id;
+
+            const chainIdHex = await provider.request<string>({
+                method: "eth_chainId",
+            });
+
+            return parseInt(chainIdHex, 16);
+        },
+
+        async getProvider(): Promise<E2EProvider> {
+            if (!provider) {
                 const connectorConfig: E2EProviderConfig = {
                     rpcUrl,
                     chain,
                     account: accountConfig,
                     debug,
                 };
-
                 provider = createE2EProvider(connectorConfig);
+            }
 
-                return {
-                    accounts: [account.address],
-                    chainId: targetChainId,
-                };
-            },
+            return provider;
+        },
 
-            async disconnect(): Promise<void> {
-                if (provider) {
-                    disconnectProvider(provider);
-                }
-                provider = undefined;
-            },
+        async isAuthorized(): Promise<boolean> {
+            // Always authorized in E2E mode
+            return true;
+        },
 
-            async getAccounts(): Promise<readonly Address[]> {
-                return [account.address];
-            },
-
-            async getChainId(): Promise<number> {
-                if (!provider) return chain.id;
-
-                const chainIdHex = await provider.request<string>({
-                    method: "eth_chainId",
+        async switchChain({ chainId }: { chainId: number }): Promise<Chain> {
+            if (provider) {
+                await provider.request({
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: `0x${chainId.toString(16)}` }],
                 });
+                setChain(provider, chainId);
+            }
 
-                return parseInt(chainIdHex, 16);
-            },
+            config.emitter.emit("change", { chainId });
 
-            async getProvider(): Promise<E2EProvider> {
-                if (!provider) {
-                    const connectorConfig: E2EProviderConfig = {
-                        rpcUrl,
-                        chain,
-                        account: accountConfig,
-                        debug,
-                    };
-                    provider = createE2EProvider(connectorConfig);
-                }
+            // Return the chain config - in E2E mode we accept any chain
+            return {
+                id: chainId,
+                name: `Chain ${chainId}`,
+                nativeCurrency: chain.nativeCurrency,
+                rpcUrls: chain.rpcUrls,
+            };
+        },
 
-                return provider;
-            },
+        onAccountsChanged(accounts: Address[]): void {
+            if (provider && accounts.length > 0) {
+                setAccounts(provider, [...accounts]);
+            }
+            config.emitter.emit("change", { accounts });
+        },
 
-            async isAuthorized(): Promise<boolean> {
-                // Always authorized in E2E mode
-                return true;
-            },
+        onChainChanged(chainId: string): void {
+            const id = parseInt(chainId, 16);
+            if (provider) {
+                setChain(provider, id);
+            }
+            config.emitter.emit("change", { chainId: id });
+        },
 
-            async switchChain({ chainId }): Promise<Chain> {
-                if (provider) {
-                    await provider.request({
-                        method: "wallet_switchEthereumChain",
-                        params: [{ chainId: `0x${chainId.toString(16)}` }],
-                    });
-                    setChain(provider, chainId);
-                }
-
-                config.emitter.emit("change", { chainId });
-
-                // Return the chain config - in E2E mode we accept any chain
-                return {
-                    id: chainId,
-                    name: `Chain ${chainId}`,
-                    nativeCurrency: chain.nativeCurrency,
-                    rpcUrls: chain.rpcUrls,
-                };
-            },
-
-            onAccountsChanged(accounts): void {
-                if (provider && accounts.length > 0) {
-                    setAccounts(provider, accounts as Address[]);
-                }
-                config.emitter.emit("change", { accounts: accounts as readonly Address[] });
-            },
-
-            onChainChanged(chainId): void {
-                const id = typeof chainId === "string" ? parseInt(chainId, 16) : chainId;
-                if (provider) {
-                    setChain(provider, id);
-                }
-                config.emitter.emit("change", { chainId: id });
-            },
-
-            onDisconnect(): void {
-                if (provider) {
-                    disconnectProvider(provider);
-                }
-                config.emitter.emit("disconnect");
-            },
-        };
-    });
+        onDisconnect(): void {
+            if (provider) {
+                disconnectProvider(provider);
+            }
+            config.emitter.emit("disconnect");
+        },
+    }));
 }
