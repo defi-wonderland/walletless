@@ -189,7 +189,7 @@ test("should swap tokens", async ({ page }) => {
     await page.goto("/swap");
 
     await page.getByTestId("token-input").fill("1.0");
-    await await page.getByTestId("swap-button").click();
+    await page.getByTestId("swap-button").click();
 
     // Transaction is automatically signed and executed
     await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
