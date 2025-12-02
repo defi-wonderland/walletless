@@ -1,0 +1,86 @@
+{
+    "name": "@wonderland/e2e-provider",
+    "version": "0.0.1",
+    "private": false,
+    "description": "Virtual EIP-1193 provider for E2E testing with Wagmi connector",
+    "keywords": [
+        "ethereum",
+        "e2e",
+        "testing",
+        "wagmi",
+        "viem",
+        "provider",
+        "eip-1193"
+    ],
+    "homepage": "https://github.com/defi-wonderland/e2e-provider#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/defi-wonderland/e2e-provider.git"
+    },
+    "license": "MIT",
+    "author": "Wonderland",
+    "type": "module",
+    "main": "./dist/src/index.js",
+    "types": "./dist/src/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/src/index.d.ts",
+            "import": "./dist/src/index.js"
+        }
+    },
+    "directories": {
+        "src": "src"
+    },
+    "files": [
+        "dist/*",
+        "package.json",
+        "!**/*.tsbuildinfo"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json",
+        "check-types": "tsc --noEmit -p ./tsconfig.json",
+        "clean": "rm -rf dist",
+        "format": "prettier --check \"{src,test}/**/*.{js,ts,json}\"",
+        "format:fix": "prettier --write \"{src,test}/**/*.{js,ts,json}\"",
+        "lint": "eslint \"{src,test}/**/*.{js,ts,json}\"",
+        "lint:fix": "pnpm lint --fix",
+        "prepare": "husky",
+        "test": "vitest run --config vitest.config.ts --passWithNoTests",
+        "test:cov": "vitest run --config vitest.config.ts --coverage"
+    },
+    "lint-staged": {
+        "*": "prettier --write --ignore-unknown",
+        "*.js,*.ts,*.json": "eslint --fix",
+        "package.json": "sort-package-json"
+    },
+    "dependencies": {
+        "viem": "2.21.4",
+        "wagmi": "2.12.17"
+    },
+    "devDependencies": {
+        "@commitlint/config-conventional": "19.4.1",
+        "@ianvs/prettier-plugin-sort-imports": "4.3.1",
+        "@types/node": "20.3.1",
+        "@typescript-eslint/eslint-plugin": "7.18.0",
+        "@typescript-eslint/parser": "7.18.0",
+        "@vitest/coverage-v8": "2.1.9",
+        "commitlint": "19.4.1",
+        "eslint": "8.56.0",
+        "eslint-config-prettier": "9.1.0",
+        "eslint-plugin-prettier": "5.2.1",
+        "husky": "9.1.5",
+        "lint-staged": "15.2.10",
+        "prettier": "3.3.3",
+        "sort-package-json": "2.10.1",
+        "typescript": "5.5.4",
+        "vitest": "2.1.9"
+    },
+    "peerDependencies": {
+        "viem": ">=2.0.0",
+        "wagmi": ">=2.0.0"
+    },
+    "packageManager": "pnpm@9.7.1",
+    "engines": {
+        "node": ">=20"
+    }
+}
