@@ -188,8 +188,8 @@ import { expect, test } from "@playwright/test";
 test("should swap tokens", async ({ page }) => {
     await page.goto("/swap");
 
-    await page.fill('[data-testid="token-input"]', "1.0");
-    await page.click('[data-testid="swap-button"]');
+    await locator.fill('[data-testid="token-input"]', "1.0");
+    await locator.click('[data-testid="swap-button"]');
 
     // Transaction is automatically signed and executed
     await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
