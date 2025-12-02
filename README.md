@@ -58,7 +58,7 @@ import { mainnet } from "wagmi/chains";
 // Anvil's default test private key
 const TEST_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
-const isE2E = process.env.NEXT_PUBLIC_E2E_CONNECTOR === "true";
+const isE2E = process.env.CI === "true";
 
 export const config = createConfig({
     chains: [mainnet],
