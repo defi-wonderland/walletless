@@ -11,8 +11,8 @@ This library provides a **"Man-in-the-Middle" injected provider** that sits betw
 ```mermaid
 graph LR
     DApp["DApp UI"]
-    CP1["Virtual Provider"]
-    CP2["Virtual Provider"]
+    CP1["Walletless Provider"]
+    CP2["Walletless Provider"]
     SIGN["Sign logic / Impersonation"]
     ANVIL["Anvil RPC"]
 
