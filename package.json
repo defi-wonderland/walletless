@@ -1,5 +1,5 @@
 {
-    "name": "@defi-wonderland/e2e-provider",
+    "name": "@wonderland/e2e-provider",
     "version": "0.0.1",
     "private": false,
     "description": "Virtual EIP-1193 provider for E2E testing with Wagmi connector",
@@ -84,4 +84,3 @@
         "node": ">=20"
     }
 }
-
