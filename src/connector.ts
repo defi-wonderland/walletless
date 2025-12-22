@@ -40,7 +40,7 @@ export type E2EConnectorParameters = {
  *
  * @example
  * ```ts
- * import { e2eConnector } from '@defi-wonderland/e2e-provider'
+ * import { e2eConnector } from '@wonderland/walletless'
  * import { createConfig, http } from 'wagmi'
  * import { mainnet } from 'wagmi/chains'
  *

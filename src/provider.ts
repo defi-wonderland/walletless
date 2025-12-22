@@ -86,7 +86,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
     };
 
     function log(...args: unknown[]): void {
-        if (debug) console.log("[E2E-Provider]", ...args);
+        if (debug) console.log("[Walletless-Provider]", ...args);
     }
 
     function emit<K extends keyof ProviderEvents>(
