@@ -1,8 +1,12 @@
 import type { Account, Address, Chain, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { createConnector } from "wagmi";
 
-import type { E2EProvider, E2EProviderConfig } from "./types.js";
+import type {
+    ConnectorInstance,
+    CreateConnectorFn,
+    E2EProvider,
+    E2EProviderConfig,
+} from "./types.js";
 import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_ANVIL_RPC_URL, DEFAULT_CHAIN } from "./constants.js";
 import {
     createE2EProvider,
@@ -30,7 +34,7 @@ export type E2EConnectorParameters = {
 };
 
 /**
- * Creates a custom Wagmi connector for e2e testing.
+ * Creates a custom connector for e2e testing.
  *
  * This connector implements a "Virtual Wallet" pattern that:
  * - Routes READ operations (eth_call, eth_getBalance) directly to Anvil RPC
@@ -40,166 +44,144 @@ export type E2EConnectorParameters = {
  *
  * @example
  * ```ts
- * import { e2eConnector } from '@wonderland/walletless'
- * import { createConfig, http } from 'wagmi'
- * import { mainnet } from 'wagmi/chains'
- *
- * // Zero-config usage with Anvil defaults (mainnet fork, first test account)
- * const config = createConfig({
- *   chains: [mainnet],
- *   connectors: [e2eConnector()],
- *   transports: {
- *     [mainnet.id]: http('http://127.0.0.1:8545'),
- *   },
- * })
- *
- * // Or with custom configuration
- * const customConfig = createConfig({
- *   chains: [mainnet],
- *   connectors: [
- *     e2eConnector({
- *       rpcUrl: 'http://127.0.0.1:8545',
- *       account: '0xYourPrivateKey...',
- *       chain: mainnet,
- *       debug: true,
- *     }),
- *   ],
- *   transports: {
- *     [mainnet.id]: http('http://127.0.0.1:8545'),
- *   },
- * })
+ * const builder = createE2EConnectorBuilder(hostCreateConnector);
+ * const connector = builder({ rpcUrl, account, chain });
  * ```
  */
-export function e2eConnector(
-    parameters: E2EConnectorParameters = {},
-): ReturnType<typeof createConnector<E2EProvider>> {
-    const {
-        rpcUrl = DEFAULT_ANVIL_RPC_URL,
-        account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
-        chain = DEFAULT_CHAIN,
-        debug = false,
-    } = parameters;
 
-    // Resolve account from private key or use provided account
-    const account: Account =
-        typeof accountConfig === "string"
-            ? privateKeyToAccount(accountConfig as Hex)
-            : accountConfig;
+/**
+ * Build the E2E connector using a host `createConnector` implementation.
+ * This keeps the core builder framework-agnostic.
+ */
+export const createE2EConnectorBuilder = (createConnectorFn: CreateConnectorFn) => {
+    return (parameters: E2EConnectorParameters = {}): ConnectorInstance => {
+        const {
+            rpcUrl = DEFAULT_ANVIL_RPC_URL,
+            account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
+            chain = DEFAULT_CHAIN,
+            debug = false,
+        } = parameters;
 
-    let provider: E2EProvider | undefined;
+        const account: Account =
+            typeof accountConfig === "string"
+                ? privateKeyToAccount(accountConfig as Hex)
+                : accountConfig;
 
-    return createConnector<E2EProvider>((config) => {
-        return {
-            id: "e2e-connector",
-            name: "E2E Connector",
-            type: "e2e",
+        let provider: E2EProvider | undefined;
 
-            async setup(): Promise<void> {
-                // No setup needed
-            },
+        return createConnectorFn((config) => {
+            return {
+                id: "e2e-connector",
+                name: "E2E Connector",
+                type: "e2e",
 
-            async connect({ chainId } = {}): Promise<{
-                accounts: readonly Address[];
-                chainId: number;
-            }> {
-                const targetChainId = chainId || chain.id;
+                async setup(): Promise<void> {
+                    return;
+                },
 
-                const connectorConfig: E2EProviderConfig = {
-                    rpcUrl,
-                    chain,
-                    account: accountConfig,
-                    debug,
-                };
+                async connect({ chainId } = {}): Promise<{
+                    accounts: readonly Address[];
+                    chainId: number;
+                }> {
+                    const targetChainId = chainId || chain.id;
 
-                provider = createE2EProvider(connectorConfig);
-
-                return {
-                    accounts: [account.address],
-                    chainId: targetChainId,
-                };
-            },
-
-            async disconnect(): Promise<void> {
-                if (provider) {
-                    disconnectProvider(provider);
-                }
-                provider = undefined;
-            },
-
-            async getAccounts(): Promise<readonly Address[]> {
-                return [account.address];
-            },
-
-            async getChainId(): Promise<number> {
-                if (!provider) return chain.id;
-
-                const chainIdHex = await provider.request<string>({
-                    method: "eth_chainId",
-                });
-
-                return parseInt(chainIdHex, 16);
-            },
-
-            async getProvider(): Promise<E2EProvider> {
-                if (!provider) {
                     const connectorConfig: E2EProviderConfig = {
                         rpcUrl,
                         chain,
                         account: accountConfig,
                         debug,
                     };
+
                     provider = createE2EProvider(connectorConfig);
-                }
 
-                return provider;
-            },
+                    return {
+                        accounts: [account.address],
+                        chainId: targetChainId,
+                    };
+                },
 
-            async isAuthorized(): Promise<boolean> {
-                // Always authorized in E2E mode
-                return true;
-            },
+                async disconnect(): Promise<void> {
+                    if (provider) {
+                        disconnectProvider(provider);
+                    }
+                    provider = undefined;
+                },
 
-            async switchChain({ chainId }): Promise<Chain> {
-                if (provider) {
-                    await provider.request({
-                        method: "wallet_switchEthereumChain",
-                        params: [{ chainId: `0x${chainId.toString(16)}` }],
+                async getAccounts(): Promise<readonly Address[]> {
+                    return [account.address];
+                },
+
+                async getChainId(): Promise<number> {
+                    if (!provider) return chain.id;
+
+                    const chainIdHex = await provider.request<string>({
+                        method: "eth_chainId",
                     });
-                    setChain(provider, chainId);
-                }
 
-                config.emitter.emit("change", { chainId });
+                    return parseInt(chainIdHex, 16);
+                },
 
-                // Return the chain config - in E2E mode we accept any chain
-                return {
-                    id: chainId,
-                    name: `Chain ${chainId}`,
-                    nativeCurrency: chain.nativeCurrency,
-                    rpcUrls: chain.rpcUrls,
-                };
-            },
+                async getProvider(): Promise<E2EProvider> {
+                    if (!provider) {
+                        const connectorConfig: E2EProviderConfig = {
+                            rpcUrl,
+                            chain,
+                            account: accountConfig,
+                            debug,
+                        };
+                        provider = createE2EProvider(connectorConfig);
+                    }
 
-            onAccountsChanged(accounts): void {
-                if (provider && accounts.length > 0) {
-                    setAccounts(provider, accounts as Address[]);
-                }
-                config.emitter.emit("change", { accounts: accounts as readonly Address[] });
-            },
+                    return provider;
+                },
 
-            onChainChanged(chainId): void {
-                const id = typeof chainId === "string" ? parseInt(chainId, 16) : chainId;
-                if (provider) {
-                    setChain(provider, id);
-                }
-                config.emitter.emit("change", { chainId: id });
-            },
+                async isAuthorized(): Promise<boolean> {
+                    // Always authorized in E2E mode
+                    return true;
+                },
 
-            onDisconnect(): void {
-                if (provider) {
-                    disconnectProvider(provider);
-                }
-                config.emitter.emit("disconnect");
-            },
-        };
-    });
-}
+                async switchChain({ chainId }): Promise<Chain> {
+                    if (provider) {
+                        await provider.request({
+                            method: "wallet_switchEthereumChain",
+                            params: [{ chainId: `0x${chainId.toString(16)}` }],
+                        });
+                        setChain(provider, chainId);
+                    }
+
+                    config.emitter.emit("change", { chainId });
+
+                    // Return the chain config; in E2E mode we accept any chain
+                    return {
+                        id: chainId,
+                        name: `Chain ${chainId}`,
+                        nativeCurrency: chain.nativeCurrency,
+                        rpcUrls: chain.rpcUrls,
+                    };
+                },
+
+                onAccountsChanged(accounts): void {
+                    if (provider && accounts.length > 0) {
+                        setAccounts(provider, accounts as Address[]);
+                    }
+                    config.emitter.emit("change", { accounts: accounts as readonly Address[] });
+                },
+
+                onChainChanged(chainId): void {
+                    const id = typeof chainId === "string" ? parseInt(chainId, 16) : chainId;
+                    if (provider) {
+                        setChain(provider, id);
+                    }
+                    config.emitter.emit("change", { chainId: id });
+                },
+
+                onDisconnect(): void {
+                    if (provider) {
+                        disconnectProvider(provider);
+                    }
+                    config.emitter.emit("disconnect");
+                },
+            };
+        });
+    };
+};

@@ -1,6 +1,16 @@
-// Main connector export
-export { e2eConnector } from "./connector.js";
+// viem-first helpers and connector builder
+export { createE2EClient } from "./client.js";
+export { createE2EConnectorBuilder } from "./connector.js";
 export type { E2EConnectorParameters } from "./connector.js";
+export type {
+    ConnectorEmitter,
+    ConnectorConfig,
+    ConnectorInstance,
+    CreateConnectorFn,
+} from "./types.js";
+
+// Adapters
+export { e2eConnector } from "./connectors/wagmi.js";
 
 // Provider utilities for test control
 export { createE2EProvider, setAccounts, setChain, disconnect } from "./provider.js";

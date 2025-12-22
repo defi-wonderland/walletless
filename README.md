@@ -46,12 +46,12 @@ pnpm add @wonderland/walletless
 
 ## Usage
 
-### With Wagmi (Recommended)
+### With Wagmi (Optional Peer)
 
 The solution uses a standard Wagmi Connector factory, making it "Plug and Play". The DApp does not need to change its code logic, only its configuration:
 
 ```typescript
-import { e2eConnector } from "@wonderland/walletless";
+import { e2eConnector } from "@wonderland/walletless/connectors/wagmi";
 import { createConfig, http } from "wagmi";
 import { mainnet } from "wagmi/chains";
 
@@ -73,7 +73,7 @@ export const config = createConfig({
 #### Custom Configuration
 
 ```typescript
-import { e2eConnector } from "@wonderland/walletless";
+import { e2eConnector } from "@wonderland/walletless/connectors/wagmi";
 import { createConfig, http } from "wagmi";
 import { optimism } from "wagmi/chains";
 
@@ -90,6 +90,24 @@ export const config = createConfig({
     transports: {
         [optimism.id]: http("http://127.0.0.1:8545"),
     },
+});
+```
+
+### With viem
+
+```typescript
+import { createE2EClient } from "@wonderland/walletless";
+import { mainnet } from "viem/chains";
+
+const { provider, walletClient } = createE2EClient({
+    rpcUrl: "http://127.0.0.1:8545",
+    chain: mainnet,
+});
+
+const accounts = await provider.request({ method: "eth_requestAccounts" });
+await walletClient.sendTransaction({
+    to: "0xRecipient...",
+    value: 1_000_000_000_000_000_000n,
 });
 ```
 

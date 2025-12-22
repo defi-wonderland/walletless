@@ -127,3 +127,38 @@ export type TypedData = {
     primaryType: string;
     message: Record<string, unknown>;
 };
+
+/**
+ * Connector integration types (framework-agnostic)
+ */
+export type ConnectorEmitter = {
+    emit: (event: string, payload?: unknown) => void;
+};
+
+export type ConnectorConfig = {
+    emitter: ConnectorEmitter;
+};
+
+export type ConnectorInstance = {
+    id: string;
+    name: string;
+    type: string;
+    setup: () => Promise<void>;
+    connect: (args?: { chainId?: number }) => Promise<{
+        accounts: readonly Address[];
+        chainId: number;
+    }>;
+    disconnect: () => Promise<void>;
+    getAccounts: () => Promise<readonly Address[]>;
+    getChainId: () => Promise<number>;
+    getProvider: () => Promise<E2EProvider>;
+    isAuthorized: () => Promise<boolean>;
+    switchChain: (args: { chainId: number }) => Promise<Chain>;
+    onAccountsChanged: (accounts: readonly Address[]) => void;
+    onChainChanged: (chainId: number | string) => void;
+    onDisconnect: () => void;
+};
+
+export type CreateConnectorFn = (
+    connector: (config: ConnectorConfig) => ConnectorInstance,
+) => ConnectorInstance;

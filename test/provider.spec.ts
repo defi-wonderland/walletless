@@ -1,7 +1,10 @@
 import type { Address, Hex } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CreateConnectorFn } from "../src/connector.js";
 import type { E2EProviderConfig } from "../src/types.js";
+import { e2eConnector as wagmiE2EConnector } from "../src/connectors/wagmi.js";
+import { createE2EClient } from "../src/index.js";
 import { createE2EProvider, disconnect, setAccounts, setChain } from "../src/provider.js";
 
 const mockChain = {
@@ -266,5 +269,30 @@ describe("disconnect", () => {
         disconnect(provider);
 
         expect(handler).toHaveBeenCalledWith({ code: 4900, message: "Disconnected" });
+    });
+});
+
+describe("createE2EClient", () => {
+    it("should create a provider and wallet client without requiring wagmi", async () => {
+        const { provider, walletClient } = createE2EClient(baseConfig);
+
+        const accounts = await provider.request<Address[]>({ method: "eth_accounts" });
+
+        expect(accounts).toEqual([TEST_ADDRESS]);
+        expect(walletClient.account?.address).toBe(TEST_ADDRESS);
+    });
+});
+
+describe("wagmi subpath export", () => {
+    it("should expose the connector via the wagmi subpath", async () => {
+        const connectorFactory: ReturnType<CreateConnectorFn> = wagmiE2EConnector(baseConfig);
+        const connector = connectorFactory({
+            chains: [mockChain],
+            emitter: { emit: vi.fn() },
+        } as unknown as Parameters<ReturnType<CreateConnectorFn>>[0]);
+        const result = await connector.connect();
+
+        expect(result.accounts).toEqual([TEST_ADDRESS]);
+        expect(result.chainId).toBe(mockChain.id);
     });
 });
