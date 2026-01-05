@@ -14,6 +14,7 @@ import type {
     TypedData,
 } from "./types.js";
 import {
+    ANVIL_ACCOUNTS,
     DEFAULT_ANVIL_PRIVATE_KEY,
     DEFAULT_ANVIL_RPC_URL,
     DEFAULT_CHAIN,
@@ -25,6 +26,78 @@ import {
 type EventListeners = {
     [K in keyof ProviderEvents]: Set<ProviderEvents[K]>;
 };
+
+/**
+ * Input types for setSigningAccount:
+ * - number (0-9): Index into ANVIL_ACCOUNTS array
+ * - Address (42 chars): Ethereum address to lookup in ANVIL_ACCOUNTS
+ * - Hex (66 chars): Raw private key
+ * - Account: viem Account object (for impersonation or custom accounts)
+ */
+export type SigningAccountInput = number | Address | Hex | Account;
+
+/**
+ * Type guard: check if input is a viem Account object
+ */
+function isAccount(input: SigningAccountInput): input is Account {
+    return typeof input === "object" && input !== null && "address" in input;
+}
+
+/**
+ * Resolve various account input formats to an Account object
+ */
+function resolveAccount(input: SigningAccountInput): PrivateKeyAccount | Account {
+    // Case 1: viem Account object — use directly (for impersonation/custom accounts)
+    if (isAccount(input)) {
+        return input;
+    }
+
+    // Case 2: Numeric index (0-9)
+    if (typeof input === "number") {
+        if (input < 0 || input > 9 || !Number.isInteger(input)) {
+            throw new Error(`Invalid Anvil account index: ${input}. Must be 0-9.`);
+        }
+        // Safe to use ! since we validated index is 0-9 and ANVIL_ACCOUNTS has exactly 10 elements
+        const anvilAccount = ANVIL_ACCOUNTS[input]!;
+        return privateKeyToAccount(anvilAccount.privateKey);
+    }
+
+    // Case 3: String — distinguish by length (address=42, privateKey=66)
+    const inputStr = input as string;
+
+    if (inputStr.length === 66) {
+        return privateKeyToAccount(inputStr as Hex);
+    }
+
+    if (inputStr.length === 42) {
+        const match = ANVIL_ACCOUNTS.find(
+            (a) => a.address.toLowerCase() === inputStr.toLowerCase(),
+        );
+        if (!match) {
+            throw new Error(`Address ${inputStr} is not a default Anvil account.`);
+        }
+        return privateKeyToAccount(match.privateKey);
+    }
+
+    throw new Error(
+        `Invalid input: expected index (0-9), address (42 chars), private key (66 chars), or Account object.`,
+    );
+}
+
+/**
+ * Internal state that can be mutated by helper functions like setSigningAccount
+ */
+interface InternalState {
+    account: PrivateKeyAccount | Account;
+    walletClient: ReturnType<typeof createWalletClient>;
+}
+
+/**
+ * Extended provider type that includes internal state for account switching
+ */
+export interface E2EProviderWithInternal extends E2EProvider {
+    __internal: InternalState;
+}
 
 /**
  * Creates an EIP-1193 compatible provider for E2E testing.
@@ -48,7 +121,7 @@ type EventListeners = {
  * const accounts = await provider.request({ method: 'eth_requestAccounts' })
  * ```
  */
-export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
+export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWithInternal {
     const {
         rpcUrl = DEFAULT_ANVIL_RPC_URL,
         chain = DEFAULT_CHAIN,
@@ -59,20 +132,26 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
     let requestId = 0;
 
     // Create account from private key or use provided account
-    const account: PrivateKeyAccount | Account =
+    const initialAccount: PrivateKeyAccount | Account =
         typeof accountConfig === "string"
             ? privateKeyToAccount(accountConfig as Hex)
             : accountConfig;
 
     // Create wallet client for signing operations with explicit account
-    const walletClient = createWalletClient({
-        account,
+    const initialWalletClient = createWalletClient({
+        account: initialAccount,
         chain,
         transport: http(rpcUrl),
     });
 
+    // Internal state that can be mutated by setSigningAccount
+    const internal: InternalState = {
+        account: initialAccount,
+        walletClient: initialWalletClient,
+    };
+
     const state: ProviderState = {
-        accounts: [account.address],
+        accounts: [initialAccount.address],
         chainId: chain.id,
         isConnected: false,
     };
@@ -169,14 +248,18 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
                           : {}),
                 };
 
-                const hash = await walletClient.sendTransaction(txRequest);
+                const hash = await internal.walletClient.sendTransaction({
+                    ...txRequest,
+                    account: internal.account,
+                });
                 return hash as T;
             }
 
             case "personal_sign": {
                 // personal_sign params: [message, address]
                 const message = params?.[0] as Hex;
-                const signature = await walletClient.signMessage({
+                const signature = await internal.walletClient.signMessage({
+                    account: internal.account,
                     message: { raw: message },
                 });
                 return signature as T;
@@ -185,7 +268,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
             case "eth_sign": {
                 // eth_sign params: [address, message]
                 const ethSignMessage = params?.[1] as Hex;
-                const ethSignature = await walletClient.signMessage({
+                const ethSignature = await internal.walletClient.signMessage({
+                    account: internal.account,
                     message: { raw: ethSignMessage },
                 });
                 return ethSignature as T;
@@ -201,7 +285,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
                         ? (JSON.parse(typedDataJson) as TypedData)
                         : typedDataJson;
 
-                const typedDataSignature = await walletClient.signTypedData({
+                const typedDataSignature = await internal.walletClient.signTypedData({
+                    account: internal.account,
                     domain: typedData.domain,
                     types: typedData.types,
                     primaryType: typedData.primaryType,
@@ -318,11 +403,39 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
         listeners[event].delete(listener);
     }
 
+    /**
+     * Update internal state when signing account changes
+     */
+    function updateSigningAccount(newAccount: PrivateKeyAccount | Account): void {
+        internal.account = newAccount;
+        internal.walletClient = createWalletClient({
+            account: newAccount,
+            chain,
+            transport: http(rpcUrl),
+        });
+        state.accounts = [newAccount.address];
+    }
+
     return {
         request,
         on,
         removeListener,
         emit,
+        __internal: {
+            get account(): PrivateKeyAccount | Account {
+                return internal.account;
+            },
+            get walletClient(): ReturnType<typeof createWalletClient> {
+                return internal.walletClient;
+            },
+            set account(newAccount: PrivateKeyAccount | Account) {
+                updateSigningAccount(newAccount);
+            },
+            set walletClient(_) {
+                // walletClient is derived from account, so we don't allow direct setting
+                throw new Error("Cannot set walletClient directly. Use setSigningAccount instead.");
+            },
+        },
     };
 }
 
@@ -346,4 +459,49 @@ export function setChain(provider: E2EProvider, chainId: number): void {
  */
 export function disconnect(provider: E2EProvider): void {
     provider.emit("disconnect", { code: 4900, message: "Disconnected" });
+}
+
+/**
+ * Changes the signing account used by the provider.
+ * This updates both the internal wallet client and emits an accountsChanged event.
+ *
+ * @param provider - The E2E provider instance (must be created with createE2EProvider)
+ * @param account - The account to switch to. Can be:
+ *   - A number (0-9): Index of the default Anvil account
+ *   - An address string (42 chars): Looks up the matching Anvil account's private key
+ *   - A private key string (66 chars): Uses the raw private key directly
+ *   - A viem Account object: Uses the account directly (for impersonation or custom accounts)
+ *
+ * @example
+ * ```ts
+ * const provider = createE2EProvider();
+ *
+ * // Switch by index (0-9)
+ * setSigningAccount(provider, 0);  // First Anvil account
+ * setSigningAccount(provider, 5);  // Sixth Anvil account
+ *
+ * // Switch by address (looks up matching Anvil private key)
+ * setSigningAccount(provider, '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+ *
+ * // Switch by raw private key
+ * setSigningAccount(provider, '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
+ *
+ * // Switch by viem Account object
+ * setSigningAccount(provider, privateKeyToAccount('0x...'));
+ * ```
+ */
+export function setSigningAccount(provider: E2EProvider, account: SigningAccountInput): void {
+    const providerWithInternal = provider as E2EProviderWithInternal;
+
+    if (!providerWithInternal.__internal) {
+        throw new Error(
+            "Provider does not support setSigningAccount. Make sure you're using a provider created with createE2EProvider.",
+        );
+    }
+
+    const newAccount = resolveAccount(account);
+    providerWithInternal.__internal.account = newAccount;
+
+    // Emit accountsChanged event to notify listeners
+    provider.emit("accountsChanged", [newAccount.address]);
 }
