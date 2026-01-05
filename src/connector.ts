@@ -9,7 +9,7 @@ import {
     disconnect as disconnectProvider,
     setAccounts,
     setChain,
-} from "./provider.js";
+} from "./helpers.js";
 
 /**
  * Parameters for creating an E2E test connector

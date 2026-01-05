@@ -2,8 +2,11 @@
 export { e2eConnector } from "./connector.js";
 export type { E2EConnectorParameters } from "./connector.js";
 
+// Provider class
+export { WalletlessProvider } from "./provider.js";
+
 // Provider utilities for test control
-export { createE2EProvider, setAccounts, setChain, disconnect } from "./provider.js";
+export { createE2EProvider, disconnect, setAccounts, setChain } from "./helpers.js";
 
 // Type exports
 export type {

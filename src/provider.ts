@@ -1,4 +1,4 @@
-import type { Account, Address, Hex } from "viem";
+import type { Account, Chain, Hex, HttpTransport, WalletClient } from "viem";
 import type { PrivateKeyAccount } from "viem/accounts";
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -27,7 +27,7 @@ type EventListeners = {
 };
 
 /**
- * Creates an EIP-1193 compatible provider for E2E testing.
+ * EIP-1193 compatible provider for E2E testing.
  *
  * This provider implements a "Man-in-the-Middle" pattern:
  * - READ operations (eth_call, eth_getBalance, etc.) → Forwarded directly to Anvil RPC
@@ -48,52 +48,65 @@ type EventListeners = {
  * const accounts = await provider.request({ method: 'eth_requestAccounts' })
  * ```
  */
-export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
-    const {
-        rpcUrl = DEFAULT_ANVIL_RPC_URL,
-        chain = DEFAULT_CHAIN,
-        account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
-        debug = false,
-    } = config;
+export class WalletlessProvider implements E2EProvider {
+    private readonly rpcUrl: string;
+    private readonly chain: Chain;
+    private readonly account: PrivateKeyAccount | Account;
+    private readonly walletClient: WalletClient<HttpTransport, Chain, PrivateKeyAccount | Account>;
+    private readonly debug: boolean;
+    private readonly state: ProviderState;
+    private readonly listeners: EventListeners;
+    private requestId = 0;
 
-    let requestId = 0;
+    constructor(config: E2EProviderConfig = {}) {
+        const {
+            rpcUrl = DEFAULT_ANVIL_RPC_URL,
+            chain = DEFAULT_CHAIN,
+            account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
+            debug = false,
+        } = config;
 
-    // Create account from private key or use provided account
-    const account: PrivateKeyAccount | Account =
-        typeof accountConfig === "string"
-            ? privateKeyToAccount(accountConfig as Hex)
-            : accountConfig;
+        this.rpcUrl = rpcUrl;
+        this.chain = chain;
+        this.debug = debug;
 
-    // Create wallet client for signing operations with explicit account
-    const walletClient = createWalletClient({
-        account,
-        chain,
-        transport: http(rpcUrl),
-    });
+        // Create account from private key or use provided account
+        this.account =
+            typeof accountConfig === "string"
+                ? privateKeyToAccount(accountConfig as Hex)
+                : accountConfig;
 
-    const state: ProviderState = {
-        accounts: [account.address],
-        chainId: chain.id,
-        isConnected: false,
-    };
+        // Create wallet client for signing operations with explicit account
+        this.walletClient = createWalletClient({
+            account: this.account,
+            chain,
+            transport: http(rpcUrl),
+        });
 
-    const listeners: EventListeners = {
-        accountsChanged: new Set(),
-        chainChanged: new Set(),
-        connect: new Set(),
-        disconnect: new Set(),
-        message: new Set(),
-    };
+        this.state = {
+            accounts: [this.account.address],
+            chainId: chain.id,
+            isConnected: false,
+        };
 
-    function log(...args: unknown[]): void {
-        if (debug) console.log("[Walletless-Provider]", ...args);
+        this.listeners = {
+            accountsChanged: new Set(),
+            chainChanged: new Set(),
+            connect: new Set(),
+            disconnect: new Set(),
+            message: new Set(),
+        };
     }
 
-    function emit<K extends keyof ProviderEvents>(
-        event: K,
-        ...args: Parameters<ProviderEvents[K]>
-    ): void {
-        listeners[event].forEach((listener) => {
+    private log(...args: unknown[]): void {
+        if (this.debug) console.log("[Walletless-Provider]", ...args);
+    }
+
+    /**
+     * Emit an event to all registered listeners
+     */
+    emit<K extends keyof ProviderEvents>(event: K, ...args: Parameters<ProviderEvents[K]>): void {
+        this.listeners[event].forEach((listener) => {
             // @ts-expect-error - TypeScript can't properly infer the listener type here
             listener(...args);
         });
@@ -102,8 +115,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
     /**
      * Send a JSON-RPC request to Anvil
      */
-    async function sendJsonRpc<T>(method: string, params?: unknown[]): Promise<T> {
-        const id = ++requestId;
+    private async sendJsonRpc<T>(method: string, params?: unknown[]): Promise<T> {
+        const id = ++this.requestId;
         const request: JsonRpcRequest = {
             jsonrpc: "2.0",
             method,
@@ -111,9 +124,9 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
             id,
         };
 
-        log("Sending RPC request:", method, params);
+        this.log("Sending RPC request:", method, params);
 
-        const response = await fetch(rpcUrl, {
+        const response = await fetch(this.rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(request),
@@ -134,15 +147,15 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
     /**
      * Handle read methods by sending to Anvil RPC
      */
-    async function handleReadMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        return sendJsonRpc<T>(method, params);
+    private async handleReadMethod<T>(method: string, params?: unknown[]): Promise<T> {
+        return this.sendJsonRpc<T>(method, params);
     }
 
     /**
      * Handle write operations with local signing
      */
-    async function handleWriteMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        log("Handling write method:", method, params);
+    private async handleWriteMethod<T>(method: string, params?: unknown[]): Promise<T> {
+        this.log("Handling write method:", method, params);
 
         switch (method) {
             case "eth_sendTransaction": {
@@ -150,7 +163,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
 
                 // Build transaction request with proper typing
                 const txRequest = {
-                    chain,
+                    chain: this.chain,
                     to: txParams.to,
                     value: txParams.value ? BigInt(txParams.value) : undefined,
                     data: txParams.data,
@@ -169,14 +182,14 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
                           : {}),
                 };
 
-                const hash = await walletClient.sendTransaction(txRequest);
+                const hash = await this.walletClient.sendTransaction(txRequest);
                 return hash as T;
             }
 
             case "personal_sign": {
                 // personal_sign params: [message, address]
                 const message = params?.[0] as Hex;
-                const signature = await walletClient.signMessage({
+                const signature = await this.walletClient.signMessage({
                     message: { raw: message },
                 });
                 return signature as T;
@@ -185,7 +198,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
             case "eth_sign": {
                 // eth_sign params: [address, message]
                 const ethSignMessage = params?.[1] as Hex;
-                const ethSignature = await walletClient.signMessage({
+                const ethSignature = await this.walletClient.signMessage({
                     message: { raw: ethSignMessage },
                 });
                 return ethSignature as T;
@@ -201,7 +214,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
                         ? (JSON.parse(typedDataJson) as TypedData)
                         : typedDataJson;
 
-                const typedDataSignature = await walletClient.signTypedData({
+                const typedDataSignature = await this.walletClient.signTypedData({
                     domain: typedData.domain,
                     types: typedData.types,
                     primaryType: typedData.primaryType,
@@ -212,7 +225,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
 
             case "eth_sendRawTransaction": {
                 // Forward raw transaction to Anvil
-                return sendJsonRpc<T>(method, params);
+                return this.sendJsonRpc<T>(method, params);
             }
 
             default:
@@ -223,32 +236,34 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
     /**
      * Handle wallet/account methods
      */
-    async function handleWalletMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        log("Handling wallet method:", method, params);
+    private async handleWalletMethod<T>(method: string, params?: unknown[]): Promise<T> {
+        this.log("Handling wallet method:", method, params);
 
         switch (method) {
             case "eth_accounts":
-                return state.accounts as T;
+                return this.state.accounts as T;
 
             case "eth_chainId":
-                return `0x${state.chainId.toString(16)}` as T;
+                return `0x${this.state.chainId.toString(16)}` as T;
 
             case "net_version":
-                return state.chainId.toString() as T;
+                return this.state.chainId.toString() as T;
 
             case "eth_requestAccounts": {
-                if (!state.isConnected) {
-                    state.isConnected = true;
-                    emit("connect", { chainId: `0x${state.chainId.toString(16)}` as Hex });
+                if (!this.state.isConnected) {
+                    this.state.isConnected = true;
+                    this.emit("connect", {
+                        chainId: `0x${this.state.chainId.toString(16)}` as Hex,
+                    });
                 }
-                return state.accounts as T;
+                return this.state.accounts as T;
             }
 
             case "wallet_switchEthereumChain": {
                 const [{ chainId }] = params as [{ chainId: Hex }];
                 const newChainId = parseInt(chainId, 16);
-                state.chainId = newChainId;
-                emit("chainChanged", chainId);
+                this.state.chainId = newChainId;
+                this.emit("chainChanged", chainId);
                 return null as T;
             }
 
@@ -271,79 +286,41 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProvider {
     /**
      * Main request handler implementing EIP-1193
      */
-    async function request<T>({
-        method,
-        params,
-    }: {
-        method: string;
-        params?: unknown[];
-    }): Promise<T> {
-        log("Request:", method, params);
+    async request<T>({ method, params }: { method: string; params?: unknown[] }): Promise<T> {
+        this.log("Request:", method, params);
 
         // Route to appropriate handler based on method type
         // Wallet methods first (they handle local state like chainId, accounts)
         if (isWalletMethod(method)) {
-            return handleWalletMethod<T>(method, params);
+            return this.handleWalletMethod<T>(method, params);
         }
 
         // Write/signing methods
         if (isWriteMethod(method)) {
-            return handleWriteMethod<T>(method, params);
+            return this.handleWriteMethod<T>(method, params);
         }
 
         // Read methods go to RPC
         if (isReadMethod(method)) {
-            return handleReadMethod<T>(method, params);
+            return this.handleReadMethod<T>(method, params);
         }
 
         // Fallback: try as read method (for any unknown methods)
-        log("Unknown method, forwarding to RPC:", method);
-        return sendJsonRpc<T>(method, params);
+        this.log("Unknown method, forwarding to RPC:", method);
+        return this.sendJsonRpc<T>(method, params);
     }
 
     /**
      * Subscribe to provider events
      */
-    function on<K extends keyof ProviderEvents>(event: K, listener: ProviderEvents[K]): void {
-        listeners[event].add(listener);
+    on<K extends keyof ProviderEvents>(event: K, listener: ProviderEvents[K]): void {
+        this.listeners[event].add(listener);
     }
 
     /**
      * Unsubscribe from provider events
      */
-    function removeListener<K extends keyof ProviderEvents>(
-        event: K,
-        listener: ProviderEvents[K],
-    ): void {
-        listeners[event].delete(listener);
+    removeListener<K extends keyof ProviderEvents>(event: K, listener: ProviderEvents[K]): void {
+        this.listeners[event].delete(listener);
     }
-
-    return {
-        request,
-        on,
-        removeListener,
-        emit,
-    };
-}
-
-/**
- * Updates the provider state with new accounts
- */
-export function setAccounts(provider: E2EProvider, accounts: Address[]): void {
-    provider.emit("accountsChanged", accounts);
-}
-
-/**
- * Updates the provider state with a new chain
- */
-export function setChain(provider: E2EProvider, chainId: number): void {
-    const chainIdHex = `0x${chainId.toString(16)}` as Hex;
-    provider.emit("chainChanged", chainIdHex);
-}
-
-/**
- * Triggers a disconnect event on the provider
- */
-export function disconnect(provider: E2EProvider): void {
-    provider.emit("disconnect", { code: 4900, message: "Disconnected" });
 }

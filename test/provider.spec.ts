@@ -1,17 +1,11 @@
 import type { Address, Hex } from "viem";
+import { mainnet } from "viem/chains";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { E2EProviderConfig } from "../src/types.js";
-import { createE2EProvider, disconnect, setAccounts, setChain } from "../src/provider.js";
+import { createE2EProvider, disconnect, setAccounts, setChain } from "../src/helpers.js";
 
-const mockChain = {
-    id: 1,
-    name: "Ethereum",
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: {
-        default: { http: ["https://eth.llamarpc.com"] },
-    },
-} as const;
+const mockChain = mainnet;
 
 // Anvil's first test private key
 const TEST_PRIVATE_KEY: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
