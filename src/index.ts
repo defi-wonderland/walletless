@@ -1,9 +1,20 @@
 // Main connector export
 export { e2eConnector } from "./connector.js";
-export type { E2EConnectorParameters } from "./connector.js";
+export type {
+    E2EConnectorConfigParams,
+    E2EConnectorParameters,
+    E2EConnectorProviderParams,
+} from "./connector.js";
 
 // Provider utilities for test control
-export { createE2EProvider, setAccounts, setChain, disconnect } from "./provider.js";
+export {
+    createE2EProvider,
+    setAccounts,
+    setChain,
+    disconnect,
+    setSigningAccount,
+} from "./provider.js";
+export type { E2EProviderWithInternal, SigningAccountInput } from "./provider.js";
 
 // Type exports
 export type {
@@ -21,6 +32,9 @@ export type {
 
 // Constants and utilities
 export {
+    ANVIL_ACCOUNTS,
+    ANVIL_ADDRESSES,
+    ANVIL_PRIVATE_KEYS,
     DEFAULT_ANVIL_PRIVATE_KEY,
     DEFAULT_ANVIL_RPC_URL,
     DEFAULT_CHAIN,
@@ -31,4 +45,10 @@ export {
     WALLET_METHODS,
     WRITE_METHODS,
 } from "./constants.js";
-export type { ReadMethod, WalletMethod, WriteMethod } from "./constants.js";
+export type {
+    AnvilAccount,
+    AnvilAccountIndex,
+    ReadMethod,
+    WalletMethod,
+    WriteMethod,
+} from "./constants.js";

@@ -1,8 +1,16 @@
 import type { Address, Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { E2EProviderConfig } from "../src/types.js";
-import { createE2EProvider, disconnect, setAccounts, setChain } from "../src/provider.js";
+import { ANVIL_ACCOUNTS } from "../src/constants.js";
+import {
+    createE2EProvider,
+    disconnect,
+    setAccounts,
+    setChain,
+    setSigningAccount,
+} from "../src/provider.js";
 
 const mockChain = {
     id: 1,
@@ -266,5 +274,197 @@ describe("disconnect", () => {
         disconnect(provider);
 
         expect(handler).toHaveBeenCalledWith({ code: 4900, message: "Disconnected" });
+    });
+});
+
+describe("setSigningAccount", () => {
+    describe("by index", () => {
+        it("should switch to account by index (0)", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, 0);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[0]!.address]);
+        });
+
+        it("should switch to account by index (5)", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, 5);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[5]!.address]);
+        });
+
+        it("should throw for invalid index (negative)", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => setSigningAccount(provider, -1 as 0)).toThrow(
+                "Invalid Anvil account index",
+            );
+        });
+
+        it("should throw for invalid index (> 9)", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => setSigningAccount(provider, 10 as 0)).toThrow(
+                "Invalid Anvil account index",
+            );
+        });
+
+        it("should switch to account by index (9) - boundary", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, 9);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[9]!.address]);
+        });
+
+        it("should throw for non-integer index", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => setSigningAccount(provider, 1.5 as 0)).toThrow(
+                "Invalid Anvil account index",
+            );
+        });
+    });
+
+    describe("by address", () => {
+        it("should switch to account by address (checksummed)", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, ANVIL_ACCOUNTS[1]!.address);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[1]!.address]);
+        });
+
+        it("should switch to account by address (lowercase)", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, ANVIL_ACCOUNTS[1]!.address.toLowerCase() as Address);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[1]!.address]);
+        });
+
+        it("should throw for unknown address", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() =>
+                setSigningAccount(
+                    provider,
+                    "0x1234567890123456789012345678901234567890" as Address,
+                ),
+            ).toThrow("is not a default Anvil account");
+        });
+    });
+
+    describe("by private key", () => {
+        it("should switch to account by private key", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, ANVIL_ACCOUNTS[2]!.privateKey);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[2]!.address]);
+        });
+
+        it("should accept any valid private key (not just Anvil defaults)", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+            const customKey: Hex =
+                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+            const expectedAddress = privateKeyToAccount(customKey).address;
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, customKey);
+
+            expect(handler).toHaveBeenCalledWith([expectedAddress]);
+        });
+    });
+
+    describe("by viem Account object", () => {
+        it("should switch to account by viem Account object", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+            const viemAccount = privateKeyToAccount(ANVIL_ACCOUNTS[3]!.privateKey);
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, viemAccount);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[3]!.address]);
+        });
+
+        it("should accept custom Account objects", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+            // Create a different account from the default to verify switching works
+            const customAccount = privateKeyToAccount(ANVIL_ACCOUNTS[7]!.privateKey);
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, customAccount);
+
+            expect(handler).toHaveBeenCalledWith([customAccount.address]);
+        });
+    });
+
+    describe("error cases", () => {
+        it("should throw for invalid string length", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => setSigningAccount(provider, "0x123" as Hex)).toThrow("Invalid input");
+        });
+
+        it("should throw for provider without __internal", () => {
+            const fakeProvider = {
+                emit: vi.fn(),
+                on: vi.fn(),
+                removeListener: vi.fn(),
+                request: vi.fn(),
+            };
+
+            expect(() => setSigningAccount(fakeProvider, 0)).toThrow(
+                "Provider does not support setSigningAccount",
+            );
+        });
+    });
+
+    describe("provider state integration", () => {
+        it("should update eth_accounts after switching", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            // Initial account
+            const initialAccounts = await provider.request<Address[]>({ method: "eth_accounts" });
+            expect(initialAccounts).toEqual([ANVIL_ACCOUNTS[0]!.address]);
+
+            // Switch to account 3
+            setSigningAccount(provider, 3);
+
+            // Verify eth_accounts returns the new address
+            const newAccounts = await provider.request<Address[]>({ method: "eth_accounts" });
+            expect(newAccounts).toEqual([ANVIL_ACCOUNTS[3]!.address]);
+        });
+
+        it("should update eth_requestAccounts after switching", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            // Switch to account 5
+            setSigningAccount(provider, 5);
+
+            // Verify eth_requestAccounts returns the new address
+            const accounts = await provider.request<Address[]>({
+                method: "eth_requestAccounts",
+            });
+            expect(accounts).toEqual([ANVIL_ACCOUNTS[5]!.address]);
+        });
     });
 });
