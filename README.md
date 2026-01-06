@@ -4,7 +4,7 @@ Lightweight E2E Provider for Web3 DApps - A virtual EIP-1193 provider that enabl
 
 ## Overview
 
-This library provides a **"Man-in-the-Middle" injected provider** that sits between your DApp and the network. Instead of interacting with a real wallet extension, the DApp interacts with our custom provider which implements the standard EIP-1193 interface.
+This library provides a **man-in-the-middle injected provider**. Your DApp keeps using the EIP-1193 interface, while reads go to Anvil and writes are signed locally.
 
 ### How It Works
 
@@ -24,11 +24,9 @@ graph LR
     SIGN --> ANVIL
 ```
 
-**Read operations** (`eth_call`, `eth_getBalance`, etc.) → Forwarded directly to Anvil RPC
-
-**Write operations** (`eth_sendTransaction`, `eth_sign`, etc.) → Routed to local signing logic, then forwarded to Anvil RPC
-
-This keeps **100% chain realism** while maintaining **full control** in tests.
+**Read operations** (`eth_call`, `eth_getBalance`, …) → forwarded to Anvil RPC  
+**Write operations** (`eth_sendTransaction`, `eth_sign`, …) → signed locally, then sent to Anvil  
+You get production-realistic chains with test-level control.
 
 ## Advantages
 
@@ -46,9 +44,7 @@ pnpm add @wonderland/walletless
 
 ## Usage
 
-### With Wagmi (Recommended)
-
-The solution uses a standard Wagmi Connector factory, making it "Plug and Play". The DApp does not need to change its code logic, only its configuration:
+### Wagmi (plug-and-play)
 
 ```typescript
 import { e2eConnector } from "@wonderland/walletless";
@@ -70,7 +66,7 @@ export const config = createConfig({
 });
 ```
 
-#### Custom Configuration
+#### Multichain configuration
 
 ```typescript
 import { e2eConnector } from "@wonderland/walletless";
@@ -97,7 +93,7 @@ export const config = createConfig({
 });
 ```
 
-### Standalone Provider
+### Standalone provider
 
 ```typescript
 import { createE2EProvider } from "@wonderland/walletless";
@@ -113,7 +109,7 @@ const balance = await provider.request({
 });
 ```
 
-### Test Control Functions
+### Test control helpers
 
 ```typescript
 import {
@@ -152,9 +148,7 @@ setAccounts(provider, ["0xNewAddress..."]);
 disconnect(provider);
 ```
 
-### Multichain Support
-
-The provider supports multiple chains with per-chain RPC URLs, allowing you to test chain switching scenarios in your DApp:
+### Multichain + chain switching
 
 ```typescript
 import { createE2EProvider, setChain } from "@wonderland/walletless";
@@ -189,46 +183,9 @@ try {
 }
 ```
 
-#### With Wagmi Connector
+### Wagmi connector with external provider (test control)
 
-```typescript
-import { e2eConnector } from "@wonderland/walletless";
-import { createConfig, http } from "wagmi";
-import { arbitrum, mainnet, optimism } from "wagmi/chains";
-
-export const config = createConfig({
-    chains: [mainnet, arbitrum, optimism],
-    connectors: [
-        e2eConnector({
-            chains: [mainnet, arbitrum, optimism],
-            rpcUrls: {
-                1: "http://mainnet-anvil:8545",
-                42161: "http://arbitrum-anvil:8546",
-                10: "http://optimism-anvil:8547",
-            },
-        }),
-    ],
-    transports: {
-        [mainnet.id]: http("http://mainnet-anvil:8545"),
-        [arbitrum.id]: http("http://arbitrum-anvil:8546"),
-        [optimism.id]: http("http://optimism-anvil:8547"),
-    },
-});
-```
-
-#### How Chain Switching Works
-
-When you call `setChain()` or `wallet_switchEthereumChain`:
-
-1. The chain ID is validated against the supported chains list
-2. The RPC URL is updated to the corresponding chain's URL from `rpcUrls`
-3. The internal wallet client is recreated with the new chain configuration
-4. The provider state is updated with the new chain ID
-5. A `chainChanged` event is emitted to notify listeners (wagmi, your DApp, etc.)
-
-This ensures the wallet client always uses the correct chain and RPC endpoint for signing transactions.
-
-### Using with Wagmi Connector
+Chain switching validates the target chain, updates the RPC URL, recreates the wallet client, updates state, and emits `chainChanged`.
 
 When you need to switch accounts or chains during tests while using the wagmi connector, pass your provider to the connector:
 
@@ -269,62 +226,7 @@ setChain(provider, arbitrum.id); // Switch to Arbitrum
 
 > **Note:** If your wagmi config is created inside a React component (common with RainbowKit or dynamic chain setups), you'll need to use `useRef` to maintain a stable provider reference. Otherwise, each re-render creates a new provider instance, and calls to `setSigningAccount()` won't affect the provider that wagmi is actually using.
 
-## Method Routing
-
-### Read Methods → Anvil RPC
-
-These methods are forwarded directly to the configured RPC URL:
-
--   `eth_call`, `eth_getBalance`, `eth_getCode`, `eth_getStorageAt`
--   `eth_blockNumber`, `eth_getBlockByHash`, `eth_getBlockByNumber`
--   `eth_getTransactionReceipt`, `eth_getTransactionByHash`
--   `eth_gasPrice`, `eth_estimateGas`, `eth_feeHistory`
--   `eth_getLogs`, `eth_getFilterLogs`
--   And more...
-
-### Write Methods → Local Signing → Anvil RPC
-
-These methods are handled locally with viem's wallet client:
-
--   `eth_sendTransaction` - Signed locally, sent to Anvil
--   `personal_sign` - Signed locally
--   `eth_signTypedData_v4` - Signed locally
--   `eth_sign` - Signed locally
-
-### Wallet Methods → Local State
-
-These methods are handled by local provider state:
-
--   `eth_accounts`, `eth_requestAccounts`
--   `eth_chainId`, `net_version`
--   `wallet_switchEthereumChain`, `wallet_addEthereumChain`
-
-## Test Runner Integration
-
-### Cypress Example
-
-```typescript
-// cypress/e2e/swap.cy.ts
-describe("Token Swap", () => {
-    beforeEach(() => {
-        // Start Anvil fork before tests
-        cy.task("startAnvil", { forkUrl: process.env.MAINNET_RPC });
-    });
-
-    it("should swap tokens successfully", () => {
-        cy.visit("/swap");
-
-        // The E2E connector auto-connects
-        cy.get('[data-testid="token-input"]').type("1.0");
-        cy.get('[data-testid="swap-button"]').click();
-
-        // Transaction is signed locally and sent to Anvil
-        cy.get('[data-testid="success-message"]').should("be.visible");
-    });
-});
-```
-
-### Playwright Example
+## Test runner example (Playwright)
 
 ```typescript
 // tests/swap.spec.ts
@@ -381,18 +283,6 @@ All parameters are optional with sensible Anvil defaults:
 | Address      | `setSigningAccount(provider, "0x70997...")` | Look up matching Anvil account     |
 | Private Key  | `setSigningAccount(provider, "0x59c69...")` | Use any private key (66 chars)     |
 | viem Account | `setSigningAccount(provider, viemAccount)`  | Use a viem Account object directly |
-
-## Final Result
-
-With this library you get:
-
--   A **real blockchain** (Anvil fork)
--   A **virtual wallet** (local signing)
--   A **deterministic environment** (no external dependencies)
--   A **super-fast E2E stack** (no browser extension overhead)
--   **Zero dependency on Metamask** or fake endpoints
-
-This is as close as you can get to **production behavior** with **testing-level control**.
 
 ## Development
 

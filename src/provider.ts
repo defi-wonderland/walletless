@@ -561,7 +561,7 @@ export function setAccounts(provider: E2EProvider, accounts: Address[]): void {
  *
  * // Verify the switch
  * const chainId = await provider.request({ method: 'eth_chainId' });
- * console.log(chainId); // '0x89' (137 in hex)
+ * console.log(chainId); // '0xa4b1' (42161 in hex)
  * ```
  */
 export function setChain(provider: E2EProvider, chainId: number): void {
