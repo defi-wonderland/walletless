@@ -314,6 +314,24 @@ describe("setSigningAccount", () => {
                 "Invalid Anvil account index",
             );
         });
+
+        it("should switch to account by index (9) - boundary", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            setSigningAccount(provider, 9);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[9]!.address]);
+        });
+
+        it("should throw for non-integer index", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => setSigningAccount(provider, 1.5 as 0)).toThrow(
+                "Invalid Anvil account index",
+            );
+        });
     });
 
     describe("by address", () => {
@@ -417,6 +435,36 @@ describe("setSigningAccount", () => {
             expect(() => setSigningAccount(fakeProvider, 0)).toThrow(
                 "Provider does not support setSigningAccount",
             );
+        });
+    });
+
+    describe("provider state integration", () => {
+        it("should update eth_accounts after switching", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            // Initial account
+            const initialAccounts = await provider.request<Address[]>({ method: "eth_accounts" });
+            expect(initialAccounts).toEqual([ANVIL_ACCOUNTS[0]!.address]);
+
+            // Switch to account 3
+            setSigningAccount(provider, 3);
+
+            // Verify eth_accounts returns the new address
+            const newAccounts = await provider.request<Address[]>({ method: "eth_accounts" });
+            expect(newAccounts).toEqual([ANVIL_ACCOUNTS[3]!.address]);
+        });
+
+        it("should update eth_requestAccounts after switching", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            // Switch to account 5
+            setSigningAccount(provider, 5);
+
+            // Verify eth_requestAccounts returns the new address
+            const accounts = await provider.request<Address[]>({
+                method: "eth_requestAccounts",
+            });
+            expect(accounts).toEqual([ANVIL_ACCOUNTS[5]!.address]);
         });
     });
 });

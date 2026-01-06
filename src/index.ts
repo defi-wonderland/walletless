@@ -1,6 +1,10 @@
 // Main connector export
 export { e2eConnector } from "./connector.js";
-export type { E2EConnectorParameters } from "./connector.js";
+export type {
+    E2EConnectorConfigParams,
+    E2EConnectorParameters,
+    E2EConnectorProviderParams,
+} from "./connector.js";
 
 // Provider utilities for test control
 export {
