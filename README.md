@@ -75,20 +75,24 @@ export const config = createConfig({
 ```typescript
 import { e2eConnector } from "@wonderland/walletless";
 import { createConfig, http } from "wagmi";
-import { optimism } from "wagmi/chains";
+import { arbitrum, mainnet, optimism } from "wagmi/chains";
 
 export const config = createConfig({
-    chains: [optimism],
+    chains: [mainnet, arbitrum, optimism],
     connectors: [
         e2eConnector({
-            rpcUrl: "http://127.0.0.1:8545",
+            chains: [mainnet, arbitrum, optimism],
+            rpcUrls: {
+                1: "http://mainnet-anvil:8545",
+                42161: "http://arbitrum-anvil:8546",
+            },
             account: "0xYourPrivateKey...",
-            chain: optimism,
             debug: true,
         }),
     ],
     transports: {
-        [optimism.id]: http("http://127.0.0.1:8545"),
+        [mainnet.id]: http("http://mainnet-anvil:8545"),
+        [arbitrum.id]: http("http://arbitrum-anvil:8546"),
     },
 });
 ```
@@ -113,13 +117,15 @@ const balance = await provider.request({
 
 ```typescript
 import {
+    ANVIL_ACCOUNTS,
     createE2EProvider,
     disconnect,
     setAccounts,
     setChain,
     setSigningAccount,
-    ANVIL_ACCOUNTS,
 } from "@wonderland/walletless";
+// Switch by viem Account object (for custom accounts)
+import { privateKeyToAccount } from "viem/accounts";
 
 const provider = createE2EProvider();
 
@@ -133,8 +139,6 @@ setSigningAccount(provider, "0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
 // Switch by raw private key
 setSigningAccount(provider, "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 
-// Switch by viem Account object (for custom accounts)
-import { privateKeyToAccount } from "viem/accounts";
 setSigningAccount(provider, privateKeyToAccount("0x..."));
 
 // Access Anvil accounts directly
@@ -144,38 +148,123 @@ console.log(ANVIL_ACCOUNTS[0].privateKey);
 // Update accounts (emits accountsChanged event)
 setAccounts(provider, ["0xNewAddress..."]);
 
-// Switch chain (emits chainChanged event)
-setChain(provider, 137); // Polygon
-
 // Disconnect (emits disconnect event)
 disconnect(provider);
 ```
 
-### Using with Wagmi Connector
+### Multichain Support
 
-When you need to switch accounts during tests while using the wagmi connector, pass your provider to the connector:
+The provider supports multiple chains with per-chain RPC URLs, allowing you to test chain switching scenarios in your DApp:
 
 ```typescript
-import { createE2EProvider, e2eConnector, setSigningAccount } from "@wonderland/walletless";
+import { createE2EProvider, setChain } from "@wonderland/walletless";
+import { arbitrum, mainnet, optimism } from "viem/chains";
+
+// Create provider with multiple chains and per-chain RPC URLs
+const provider = createE2EProvider({
+    chains: [mainnet, arbitrum, optimism],
+    rpcUrls: {
+        1: "http://mainnet-anvil:8545",
+        42161: "http://arbitrum-anvil:8546",
+        10: "http://optimism-anvil:8547",
+    },
+});
+
+// Get current chain (first in array is default)
+const chainId = await provider.request({ method: "eth_chainId" });
+console.log(chainId); // "0x1" (mainnet)
+
+// Switch to Arbitrum - provider now uses arbitrum RPC URL
+setChain(provider, arbitrum.id);
+
+// Verify switch
+const newChainId = await provider.request({ method: "eth_chainId" });
+console.log(newChainId); // "0xa4b1" (Arbitrum)
+
+// Switching to unsupported chain throws an error
+try {
+    setChain(provider, 137); // Polygon - not in chains array
+} catch (e) {
+    console.log(e.message); // "Chain 137 is not supported. Supported chains: 1, 42161, 10"
+}
+```
+
+#### With Wagmi Connector
+
+```typescript
+import { e2eConnector } from "@wonderland/walletless";
 import { createConfig, http } from "wagmi";
-import { mainnet } from "wagmi/chains";
+import { arbitrum, mainnet, optimism } from "wagmi/chains";
+
+export const config = createConfig({
+    chains: [mainnet, arbitrum, optimism],
+    connectors: [
+        e2eConnector({
+            chains: [mainnet, arbitrum, optimism],
+            rpcUrls: {
+                1: "http://mainnet-anvil:8545",
+                42161: "http://arbitrum-anvil:8546",
+                10: "http://optimism-anvil:8547",
+            },
+        }),
+    ],
+    transports: {
+        [mainnet.id]: http("http://mainnet-anvil:8545"),
+        [arbitrum.id]: http("http://arbitrum-anvil:8546"),
+        [optimism.id]: http("http://optimism-anvil:8547"),
+    },
+});
+```
+
+#### How Chain Switching Works
+
+When you call `setChain()` or `wallet_switchEthereumChain`:
+
+1. The chain ID is validated against the supported chains list
+2. The RPC URL is updated to the corresponding chain's URL from `rpcUrls`
+3. The internal wallet client is recreated with the new chain configuration
+4. The provider state is updated with the new chain ID
+5. A `chainChanged` event is emitted to notify listeners (wagmi, your DApp, etc.)
+
+This ensures the wallet client always uses the correct chain and RPC endpoint for signing transactions.
+
+### Using with Wagmi Connector
+
+When you need to switch accounts or chains during tests while using the wagmi connector, pass your provider to the connector:
+
+```typescript
+import {
+    createE2EProvider,
+    e2eConnector,
+    setChain,
+    setSigningAccount,
+} from "@wonderland/walletless";
+import { createConfig, http } from "wagmi";
+import { arbitrum, mainnet } from "wagmi/chains";
 
 // Create provider externally so you can control it
 const provider = createE2EProvider({
-    rpcUrl: "http://127.0.0.1:8545",
-    chain: mainnet,
+    chains: [mainnet, arbitrum],
+    rpcUrls: {
+        1: "http://mainnet-anvil:8545",
+        42161: "http://arbitrum-anvil:8546",
+    },
 });
 
 export const config = createConfig({
-    chains: [mainnet],
+    chains: [mainnet, arbitrum],
     connectors: [e2eConnector({ provider })],
     transports: {
-        [mainnet.id]: http("http://127.0.0.1:8545"),
+        [mainnet.id]: http("http://mainnet-anvil:8545"),
+        [arbitrum.id]: http("http://arbitrum-anvil:8546"),
     },
 });
 
 // In your tests, switch accounts - wagmi will be notified automatically
 setSigningAccount(provider, 3); // Switch to 4th Anvil account
+
+// Switch chains during tests (also switches RPC endpoint)
+setChain(provider, arbitrum.id); // Switch to Arbitrum
 ```
 
 > **Note:** If your wagmi config is created inside a React component (common with RainbowKit or dynamic chain setups), you'll need to use `useRef` to maintain a stable provider reference. Otherwise, each re-render creates a new provider instance, and calls to `setSigningAccount()` won't affect the provider that wagmi is actually using.
@@ -260,38 +349,38 @@ The connector accepts **either** a pre-constructed provider **or** configuration
 
 **Option 1: Pass a provider** (recommended when you need `setSigningAccount()`)
 
-| Parameter  | Type          | Description                                     |
-| ---------- | ------------- | ----------------------------------------------- |
-| `provider` | `E2EProvider` | Pre-constructed provider for external control   |
+| Parameter  | Type          | Description                                   |
+| ---------- | ------------- | --------------------------------------------- |
+| `provider` | `E2EProvider` | Pre-constructed provider for external control |
 
 **Option 2: Let the connector create the provider internally**
 
-| Parameter | Type             | Default                        | Description                             |
-| --------- | ---------------- | ------------------------------ | --------------------------------------- |
-| `rpcUrl`  | `string`         | `http://127.0.0.1:8545`        | Anvil RPC URL                           |
-| `account` | `Hex \| Account` | Anvil's first test private key | Private key or viem Account for signing |
-| `chain`   | `Chain`          | `mainnet`                      | Chain configuration                     |
-| `debug`   | `boolean`        | `false`                        | Enable debug logging                    |
+| Parameter | Type                     | Default                        | Description                                                                       |
+| --------- | ------------------------ | ------------------------------ | --------------------------------------------------------------------------------- |
+| `chains`  | `Chain[]`                | `[mainnet]`                    | Supported chains (first chain is default)                                         |
+| `rpcUrls` | `Record<number, string>` | `{}`                           | Per-chain RPC URLs mapping chainId to URL. Falls back to `http://127.0.0.1:8545`. |
+| `account` | `Hex \| Account`         | Anvil's first test private key | Private key or viem Account for signing                                           |
+| `debug`   | `boolean`                | `false`                        | Enable debug logging                                                              |
 
 ### E2EProviderConfig (Standalone)
 
 All parameters are optional with sensible Anvil defaults:
 
-| Parameter | Type             | Default                        | Description                             |
-| --------- | ---------------- | ------------------------------ | --------------------------------------- |
-| `rpcUrl`  | `string`         | `http://127.0.0.1:8545`        | Anvil RPC URL                           |
-| `chain`   | `Chain`          | `mainnet`                      | Chain configuration                     |
-| `account` | `Hex \| Account` | Anvil's first test private key | Private key or viem Account for signing |
-| `debug`   | `boolean`        | `false`                        | Enable debug logging                    |
+| Parameter | Type                     | Default                        | Description                                                                       |
+| --------- | ------------------------ | ------------------------------ | --------------------------------------------------------------------------------- |
+| `chains`  | `Chain[]`                | `[mainnet]`                    | Supported chains (first chain is default)                                         |
+| `rpcUrls` | `Record<number, string>` | `{}`                           | Per-chain RPC URLs mapping chainId to URL. Falls back to `http://127.0.0.1:8545`. |
+| `account` | `Hex \| Account`         | Anvil's first test private key | Private key or viem Account for signing                                           |
+| `debug`   | `boolean`                | `false`                        | Enable debug logging                                                              |
 
 ### setSigningAccount Input Types
 
-| Input Type       | Example                                        | Description                              |
-| ---------------- | ---------------------------------------------- | ---------------------------------------- |
-| Index (0-9)      | `setSigningAccount(provider, 0)`               | Use Anvil's nth default account          |
-| Address          | `setSigningAccount(provider, "0x70997...")`    | Look up matching Anvil account           |
-| Private Key      | `setSigningAccount(provider, "0x59c69...")`    | Use any private key (66 chars)           |
-| viem Account     | `setSigningAccount(provider, viemAccount)`     | Use a viem Account object directly       |
+| Input Type   | Example                                     | Description                        |
+| ------------ | ------------------------------------------- | ---------------------------------- |
+| Index (0-9)  | `setSigningAccount(provider, 0)`            | Use Anvil's nth default account    |
+| Address      | `setSigningAccount(provider, "0x70997...")` | Look up matching Anvil account     |
+| Private Key  | `setSigningAccount(provider, "0x59c69...")` | Use any private key (66 chars)     |
+| viem Account | `setSigningAccount(provider, viemAccount)`  | Use a viem Account object directly |
 
 ## Final Result
 
