@@ -4,6 +4,7 @@ import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 import type {
+    CompatibleChain,
     E2EProvider,
     E2EProviderConfig,
     JsonRpcRequest,
@@ -90,8 +91,8 @@ function resolveAccount(input: SigningAccountInput): PrivateKeyAccount | Account
 interface InternalState {
     account: PrivateKeyAccount | Account;
     walletClient: ReturnType<typeof createWalletClient>;
-    chains: Chain[];
-    currentChain: Chain;
+    chains: CompatibleChain[];
+    currentChain: CompatibleChain;
     rpcUrl: string;
     rpcUrls: Record<number, string>;
 }
@@ -103,8 +104,8 @@ export interface E2EProviderWithInternal extends E2EProvider {
     __internal: {
         account: PrivateKeyAccount | Account;
         walletClient: ReturnType<typeof createWalletClient>;
-        chains: Chain[];
-        currentChain: Chain;
+        chains: CompatibleChain[];
+        currentChain: CompatibleChain;
         rpcUrl: string;
         state: ProviderState;
     };
@@ -144,7 +145,9 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     } = config;
 
     // Build supported chains array (default to mainnet if not provided)
-    const supportedChains: Chain[] = chainsConfig ?? [DEFAULT_CHAIN];
+    const supportedChains: CompatibleChain[] = (chainsConfig as CompatibleChain[] | undefined) ?? [
+        DEFAULT_CHAIN,
+    ];
 
     // First chain is the default
     const initialChain = supportedChains[0] ?? DEFAULT_CHAIN;
@@ -170,7 +173,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     // Create wallet client for signing operations with explicit account
     const initialWalletClient = createWalletClient({
         account: initialAccount,
-        chain: initialChain,
+        chain: initialChain as Chain,
         transport: http(initialRpcUrl),
     });
 
@@ -264,7 +267,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
 
                 // Build transaction request with proper typing
                 const txRequest = {
-                    chain: internal.currentChain,
+                    chain: internal.currentChain as Chain,
                     to: txParams.to,
                     value: txParams.value ? BigInt(txParams.value) : undefined,
                     data: txParams.data,
@@ -379,16 +382,16 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                 }
 
                 // Find chain config and update internal state
-                const newChain = internal.chains.find((c) => c.id === newChainId);
+                const newChain = internal.chains.find((c: CompatibleChain) => c.id === newChainId);
                 if (newChain) {
                     const newRpcUrl = getRpcUrl(newChainId);
                     internal.currentChain = newChain;
                     internal.rpcUrl = newRpcUrl;
                     internal.walletClient = createWalletClient({
                         account: internal.account,
-                        chain: newChain,
+                        chain: newChain as Chain,
                         transport: http(newRpcUrl),
-                    });
+                    }) as ReturnType<typeof createWalletClient>;
                 }
 
                 state.chainId = newChainId;
@@ -469,24 +472,24 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         internal.account = newAccount;
         internal.walletClient = createWalletClient({
             account: newAccount,
-            chain: internal.currentChain,
+            chain: internal.currentChain as Chain,
             transport: http(internal.rpcUrl),
-        });
+        }) as ReturnType<typeof createWalletClient>;
         state.accounts = [newAccount.address];
     }
 
     /**
      * Update internal state when chain changes
      */
-    function updateChain(newChain: Chain): void {
+    function updateChain(newChain: CompatibleChain): void {
         const newRpcUrl = getRpcUrl(newChain.id);
         internal.currentChain = newChain;
         internal.rpcUrl = newRpcUrl;
         internal.walletClient = createWalletClient({
             account: internal.account,
-            chain: newChain,
+            chain: newChain as Chain,
             transport: http(newRpcUrl),
-        });
+        }) as ReturnType<typeof createWalletClient>;
         state.chainId = newChain.id;
     }
 
@@ -502,10 +505,10 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
             get walletClient(): ReturnType<typeof createWalletClient> {
                 return internal.walletClient;
             },
-            get chains(): Chain[] {
+            get chains(): CompatibleChain[] {
                 return internal.chains;
             },
-            get currentChain(): Chain {
+            get currentChain(): CompatibleChain {
                 return internal.currentChain;
             },
             get rpcUrl(): string {
@@ -521,7 +524,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                 // walletClient is derived from account, so we don't allow direct setting
                 throw new Error("Cannot set walletClient directly. Use setSigningAccount instead.");
             },
-            set currentChain(newChain: Chain) {
+            set currentChain(newChain: CompatibleChain) {
                 updateChain(newChain);
             },
         },

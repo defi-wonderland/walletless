@@ -1,6 +1,16 @@
 import type { Account, Address, Chain, Hex } from "viem";
 
 /**
+ * Compatible chain type to work with viem and wagmi providers
+ */
+export type CompatibleChain = {
+    id: number;
+    name?: string;
+    nativeCurrency: Chain["nativeCurrency"];
+    rpcUrls: Chain["rpcUrls"];
+} & Record<string, unknown>;
+
+/**
  * Configuration options for the E2E Provider
  *
  * This provider implements a "Man-in-the-Middle" pattern:
@@ -9,7 +19,7 @@ import type { Account, Address, Chain, Hex } from "viem";
  */
 export type E2EProviderConfig = {
     /** Supported chains. First chain is the default. (default: [mainnet]) */
-    chains?: Chain[];
+    chains?: readonly CompatibleChain[];
     /**
      * Per-chain RPC URLs mapping chainId to URL.
      * When switching chains, the provider uses the corresponding RPC URL.

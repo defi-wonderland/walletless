@@ -3,7 +3,7 @@ import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createConnector } from "wagmi";
 
-import type { E2EProvider, E2EProviderConfig } from "./types.js";
+import type { CompatibleChain, E2EProvider, E2EProviderConfig } from "./types.js";
 import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_CHAIN } from "./constants.js";
 import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from "./provider.js";
 
@@ -12,7 +12,7 @@ import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from
  */
 export type E2EConnectorConfigParams = {
     /** Supported chains. First chain is the default. (default: [mainnet]) */
-    chains?: Chain[];
+    chains?: readonly CompatibleChain[];
     /**
      * Per-chain RPC URLs mapping chainId to URL.
      * When switching chains, the provider uses the corresponding RPC URL.
@@ -242,16 +242,16 @@ export function e2eConnector(
                 config.emitter.emit("change", { chainId });
 
                 // Try to return the actual chain config if available
-                const targetChain = chains?.find((c) => c.id === chainId);
+                const targetChain = chains?.find((c) => c.id === chainId) as Chain | undefined;
                 if (targetChain) return targetChain;
 
                 // Fallback for when chains array is not provided
                 return {
                     id: chainId,
-                    name: `Chain ${chainId}`,
+                    name: defaultChain.name ?? `Chain ${chainId}`,
                     nativeCurrency: defaultChain.nativeCurrency,
                     rpcUrls: defaultChain.rpcUrls,
-                };
+                } as Chain;
             },
 
             onAccountsChanged(accounts): void {
