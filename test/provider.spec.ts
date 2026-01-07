@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { arbitrum, mainnet, optimism } from "viem/chains";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { E2EProviderConfig } from "../src/types.js";
@@ -12,22 +13,13 @@ import {
     setSigningAccount,
 } from "../src/provider.js";
 
-const mockChain = {
-    id: 1,
-    name: "Ethereum",
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: {
-        default: { http: ["https://eth.llamarpc.com"] },
-    },
-} as const;
-
 // Anvil's first test private key
 const TEST_PRIVATE_KEY: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const TEST_ADDRESS: Address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 const baseConfig: E2EProviderConfig = {
-    rpcUrl: "http://localhost:8545",
-    chain: mockChain,
+    chains: [mainnet],
+    rpcUrls: { 1: "http://localhost:8545" },
     account: TEST_PRIVATE_KEY,
     debug: false,
 };
@@ -58,6 +50,38 @@ describe("createE2EProvider", () => {
             const accounts = await provider.request<Address[]>({ method: "eth_accounts" });
 
             expect(accounts).toEqual([TEST_ADDRESS]);
+        });
+
+        it("should initialize with chains array when provided", () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum, optimism],
+            });
+
+            expect(provider.__internal.chains).toHaveLength(3);
+            expect(provider.__internal.chains.map((c) => c.id)).toEqual([1, 42161, 10]);
+        });
+
+        it("should use first chain in array as default", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [arbitrum, optimism, mainnet],
+            });
+
+            const chainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(chainId).toBe("0xa4b1"); // Arbitrum (first in array)
+            expect(provider.__internal.currentChain.id).toBe(42161);
+        });
+
+        it("should default to mainnet when chains array is empty or not provided", async () => {
+            const provider = createE2EProvider({
+                rpcUrls: { 1: "http://localhost:8545" },
+                account: TEST_PRIVATE_KEY,
+                // No chains provided
+            });
+
+            const chainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(chainId).toBe("0x1"); // mainnet (default)
         });
     });
 
@@ -113,21 +137,58 @@ describe("createE2EProvider", () => {
     });
 
     describe("wallet_switchEthereumChain", () => {
-        it("should update chain ID and emit chainChanged event", async () => {
-            const provider = createE2EProvider(baseConfig);
+        it("should update chain ID and emit chainChanged event when chain is supported", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
             const chainChangedHandler = vi.fn();
 
             provider.on("chainChanged", chainChangedHandler);
             await provider.request({
                 method: "wallet_switchEthereumChain",
-                params: [{ chainId: "0x89" }], // Polygon
+                params: [{ chainId: "0xa4b1" }], // Arbitrum
             });
 
-            expect(chainChangedHandler).toHaveBeenCalledWith("0x89");
+            expect(chainChangedHandler).toHaveBeenCalledWith("0xa4b1");
 
             // Verify the chain ID was updated
             const chainId = await provider.request<string>({ method: "eth_chainId" });
-            expect(chainId).toBe("0x89");
+            expect(chainId).toBe("0xa4b1");
+        });
+
+        it("should throw error when switching to unsupported chain", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet], // Only mainnet supported
+            });
+
+            await expect(
+                provider.request({
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: "0xa4b1" }], // Arbitrum - not supported
+                }),
+            ).rejects.toThrow("Chain 42161 is not supported");
+        });
+
+        it("should update internal wallet client when switching chains", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+
+            // Verify initial chain
+            expect(provider.__internal.currentChain.id).toBe(1);
+
+            // Switch to Arbitrum
+            await provider.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0xa4b1" }],
+            });
+
+            // Verify internal state was updated
+            expect(provider.__internal.currentChain.id).toBe(42161);
+            expect(provider.__internal.currentChain.name).toBe("Arbitrum One");
         });
     });
 
@@ -254,14 +315,228 @@ describe("setAccounts", () => {
 });
 
 describe("setChain", () => {
-    it("should emit chainChanged event with hex chain ID", () => {
-        const provider = createE2EProvider(baseConfig);
-        const handler = vi.fn();
+    describe("with multichain config", () => {
+        it("should emit chainChanged event with hex chain ID", () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum, optimism],
+            });
+            const handler = vi.fn();
 
-        provider.on("chainChanged", handler);
-        setChain(provider, 137); // Polygon
+            provider.on("chainChanged", handler);
+            setChain(provider, 42161); // Arbitrum
 
-        expect(handler).toHaveBeenCalledWith("0x89");
+            expect(handler).toHaveBeenCalledWith("0xa4b1");
+        });
+
+        it("should update eth_chainId response after switching", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+
+            // Initial chain
+            const initialChainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(initialChainId).toBe("0x1");
+
+            // Switch to Arbitrum
+            setChain(provider, 42161);
+
+            // Verify chain ID was updated
+            const newChainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(newChainId).toBe("0xa4b1");
+        });
+
+        it("should update net_version response after switching", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+
+            setChain(provider, 42161);
+
+            const version = await provider.request<string>({ method: "net_version" });
+            expect(version).toBe("42161");
+        });
+
+        it("should update internal wallet client with new chain", () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum, optimism],
+            });
+
+            // Initial chain
+            expect(provider.__internal.currentChain.id).toBe(1);
+
+            // Switch to Optimism
+            setChain(provider, 10);
+
+            // Verify internal state
+            expect(provider.__internal.currentChain.id).toBe(10);
+            expect(provider.__internal.currentChain.name).toBe("OP Mainnet");
+        });
+
+        it("should throw error for unsupported chain", () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+
+            expect(() => setChain(provider, 137)).toThrow(
+                "Chain 137 is not supported. Supported chains: 1, 42161",
+            );
+        });
+
+        it("should allow switching back to initial chain", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+
+            // Switch to Arbitrum
+            setChain(provider, 42161);
+            expect(await provider.request<string>({ method: "eth_chainId" })).toBe("0xa4b1");
+
+            // Switch back to mainnet
+            setChain(provider, 1);
+            expect(await provider.request<string>({ method: "eth_chainId" })).toBe("0x1");
+        });
+    });
+
+    describe("backward compatibility (single chain)", () => {
+        it("should work with single chain config", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            // Initial chain should work
+            const chainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(chainId).toBe("0x1");
+        });
+
+        it("should throw when trying to switch to different chain with single chain config", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => setChain(provider, 42161)).toThrow("Chain 42161 is not supported");
+        });
+
+        it("should allow switching to same chain with single chain config", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("chainChanged", handler);
+            setChain(provider, 1); // Same as initial chain
+
+            expect(handler).toHaveBeenCalledWith("0x1");
+        });
+    });
+
+    describe("error cases", () => {
+        it("should throw for provider without __internal", () => {
+            const fakeProvider = {
+                emit: vi.fn(),
+                on: vi.fn(),
+                removeListener: vi.fn(),
+                request: vi.fn(),
+            };
+
+            expect(() => setChain(fakeProvider, 1)).toThrow("Provider does not support setChain");
+        });
+    });
+
+    describe("supportedChainIds in state", () => {
+        it("should expose supported chain IDs in internal state", () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum, optimism],
+            });
+
+            expect(provider.__internal.state.supportedChainIds).toEqual([1, 42161, 10]);
+        });
+
+        it("should have single chain in supportedChainIds with single chain config", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(provider.__internal.state.supportedChainIds).toEqual([1]);
+        });
+    });
+
+    describe("multi-RPC URL support", () => {
+        it("should use correct RPC URL for initial chain", () => {
+            const provider = createE2EProvider({
+                chains: [mainnet, arbitrum],
+                rpcUrls: {
+                    1: "http://mainnet-rpc:8545",
+                    42161: "http://arbitrum-rpc:8546",
+                },
+                account: TEST_PRIVATE_KEY,
+            });
+
+            expect(provider.__internal.rpcUrl).toBe("http://mainnet-rpc:8545");
+        });
+
+        it("should update RPC URL when switching chains", () => {
+            const provider = createE2EProvider({
+                chains: [mainnet, arbitrum],
+                rpcUrls: {
+                    1: "http://mainnet-rpc:8545",
+                    42161: "http://arbitrum-rpc:8546",
+                },
+                account: TEST_PRIVATE_KEY,
+            });
+
+            // Initial RPC URL
+            expect(provider.__internal.rpcUrl).toBe("http://mainnet-rpc:8545");
+
+            // Switch to Arbitrum
+            setChain(provider, 42161);
+
+            // RPC URL should now be arbitrum
+            expect(provider.__internal.rpcUrl).toBe("http://arbitrum-rpc:8546");
+        });
+
+        it("should fall back to default Anvil URL for chains not in rpcUrls", () => {
+            const provider = createE2EProvider({
+                chains: [mainnet, arbitrum],
+                rpcUrls: {
+                    1: "http://mainnet-rpc:8545",
+                    // arbitrum not specified
+                },
+                account: TEST_PRIVATE_KEY,
+            });
+
+            // Switch to Arbitrum (not in rpcUrls)
+            setChain(provider, 42161);
+
+            // Should fall back to default
+            expect(provider.__internal.rpcUrl).toBe("http://127.0.0.1:8545");
+        });
+
+        it("should use default Anvil URL when rpcUrls not provided", () => {
+            const provider = createE2EProvider({
+                chains: [mainnet],
+                account: TEST_PRIVATE_KEY,
+            });
+
+            expect(provider.__internal.rpcUrl).toBe("http://127.0.0.1:8545");
+        });
+
+        it("should switch RPC URL via wallet_switchEthereumChain", async () => {
+            const provider = createE2EProvider({
+                chains: [mainnet, arbitrum],
+                rpcUrls: {
+                    1: "http://mainnet-rpc:8545",
+                    42161: "http://arbitrum-rpc:8546",
+                },
+                account: TEST_PRIVATE_KEY,
+            });
+
+            // Switch via RPC method
+            await provider.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0xa4b1" }],
+            });
+
+            expect(provider.__internal.rpcUrl).toBe("http://arbitrum-rpc:8546");
+        });
     });
 });
 

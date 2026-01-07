@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { mainnet } from "viem/chains";
+import { arbitrum, mainnet, optimism } from "viem/chains";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { e2eConnector } from "../src/connector.js";
@@ -46,9 +46,9 @@ describe("e2eConnector", () => {
 
         it("should create a connector with custom parameters", () => {
             const connector = e2eConnector({
-                rpcUrl: "http://custom:8545",
+                chains: [mainnet],
+                rpcUrls: { 1: "http://custom:8545" },
                 account: TEST_PRIVATE_KEY,
-                chain: mainnet,
                 debug: true,
             });
 
@@ -58,7 +58,7 @@ describe("e2eConnector", () => {
 
     describe("connector instance", () => {
         it("should have correct id, name, and type", () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -70,7 +70,7 @@ describe("e2eConnector", () => {
 
     describe("setup", () => {
         it("should complete without error", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -80,7 +80,7 @@ describe("e2eConnector", () => {
 
     describe("connect", () => {
         it("should return accounts and chainId", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -91,7 +91,7 @@ describe("e2eConnector", () => {
         });
 
         it("should use provided chainId when connecting", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -101,7 +101,7 @@ describe("e2eConnector", () => {
         });
 
         it("should use default chain id when no chainId provided", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -113,7 +113,7 @@ describe("e2eConnector", () => {
 
     describe("disconnect", () => {
         it("should disconnect without error", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -122,7 +122,7 @@ describe("e2eConnector", () => {
         });
 
         it("should handle disconnect when not connected", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -132,7 +132,7 @@ describe("e2eConnector", () => {
 
     describe("getAccounts", () => {
         it("should return the configured account address", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -144,7 +144,7 @@ describe("e2eConnector", () => {
 
     describe("getChainId", () => {
         it("should return default chain id when not connected", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -154,7 +154,7 @@ describe("e2eConnector", () => {
         });
 
         it("should return chain id from provider when connected", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -167,7 +167,7 @@ describe("e2eConnector", () => {
 
     describe("getProvider", () => {
         it("should return a provider", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -178,7 +178,7 @@ describe("e2eConnector", () => {
         });
 
         it("should create provider if not connected", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -188,7 +188,7 @@ describe("e2eConnector", () => {
         });
 
         it("should return same provider after connect", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -202,7 +202,7 @@ describe("e2eConnector", () => {
 
     describe("isAuthorized", () => {
         it("should always return true", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -214,19 +214,25 @@ describe("e2eConnector", () => {
 
     describe("switchChain", () => {
         it("should switch chain and emit change event", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({
+                chains: [mockChain, optimism],
+                account: TEST_PRIVATE_KEY,
+            });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
             await instance.connect({});
-            const result = await instance.switchChain!({ chainId: 137 });
+            const result = await instance.switchChain!({ chainId: 10 });
 
-            expect(result.id).toBe(137);
-            expect(mockConfig.emitter.emit).toHaveBeenCalledWith("change", { chainId: 137 });
+            expect(result.id).toBe(10);
+            expect(mockConfig.emitter.emit).toHaveBeenCalledWith("change", { chainId: 10 });
         });
 
         it("should return chain config with correct properties", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({
+                chains: [mockChain, arbitrum],
+                account: TEST_PRIVATE_KEY,
+            });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -234,25 +240,25 @@ describe("e2eConnector", () => {
             const result = await instance.switchChain!({ chainId: 42161 });
 
             expect(result.id).toBe(42161);
-            expect(result.name).toBe("Chain 42161");
-            expect(result.nativeCurrency).toEqual(mockChain.nativeCurrency);
-            expect(result.rpcUrls).toEqual(mockChain.rpcUrls);
+            expect(result.name).toBe("Arbitrum One");
+            expect(result.nativeCurrency).toEqual(arbitrum.nativeCurrency);
+            expect(result.rpcUrls).toEqual(arbitrum.rpcUrls);
         });
 
         it("should emit change event even without provider", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
-            await instance.switchChain!({ chainId: 10 });
+            await instance.switchChain!({ chainId: 1 });
 
-            expect(mockConfig.emitter.emit).toHaveBeenCalledWith("change", { chainId: 10 });
+            expect(mockConfig.emitter.emit).toHaveBeenCalledWith("change", { chainId: 1 });
         });
     });
 
     describe("onAccountsChanged", () => {
         it("should emit change event with new accounts", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
             const newAccounts = ["0x1234567890123456789012345678901234567890" as Address];
@@ -266,7 +272,7 @@ describe("e2eConnector", () => {
         });
 
         it("should not update provider accounts if array is empty", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -280,7 +286,7 @@ describe("e2eConnector", () => {
 
     describe("onChainChanged", () => {
         it("should emit change event with new chain id (hex string)", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -291,7 +297,7 @@ describe("e2eConnector", () => {
         });
 
         it("should emit change event with new chain id (number)", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -304,7 +310,7 @@ describe("e2eConnector", () => {
 
     describe("onDisconnect", () => {
         it("should emit disconnect event", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -315,7 +321,7 @@ describe("e2eConnector", () => {
         });
 
         it("should handle disconnect when not connected", () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -327,7 +333,7 @@ describe("e2eConnector", () => {
 
     describe("provider integration", () => {
         it("should be able to request accounts through provider", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 
@@ -339,7 +345,7 @@ describe("e2eConnector", () => {
         });
 
         it("should be able to get chain id through provider", async () => {
-            const connector = e2eConnector({ chain: mockChain, account: TEST_PRIVATE_KEY });
+            const connector = e2eConnector({ chains: [mockChain], account: TEST_PRIVATE_KEY });
             const mockConfig = createMockConfig();
             const instance = connector(mockConfig as never);
 

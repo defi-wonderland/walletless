@@ -8,10 +8,15 @@ import type { Account, Address, Chain, Hex } from "viem";
  * - Write operations (eth_sendTransaction, eth_sign) → handled locally with signing logic
  */
 export type E2EProviderConfig = {
-    /** RPC URL for all blockchain operations (default: http://127.0.0.1:8545) */
-    rpcUrl?: string;
-    /** Chain configuration (default: mainnet) */
-    chain?: Chain;
+    /** Supported chains. First chain is the default. (default: [mainnet]) */
+    chains?: Chain[];
+    /**
+     * Per-chain RPC URLs mapping chainId to URL.
+     * When switching chains, the provider uses the corresponding RPC URL.
+     * If a chain is not in the map, falls back to DEFAULT_ANVIL_RPC_URL.
+     * @example { 1: 'http://mainnet:8545', 42161: 'http://arbitrum:8546' }
+     */
+    rpcUrls?: Record<number, string>;
     /**
      * Account for signing transactions. Can be:
      * - A private key hex string (default: Anvil's first test account)
@@ -90,6 +95,7 @@ export type ProviderState = {
     accounts: Address[];
     chainId: number;
     isConnected: boolean;
+    supportedChainIds: number[];
 };
 
 /**
