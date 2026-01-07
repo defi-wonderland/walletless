@@ -4,28 +4,27 @@ import { privateKeyToAccount } from "viem/accounts";
 import { createConnector } from "wagmi";
 
 import type { E2EProvider, E2EProviderConfig } from "./types.js";
-import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_ANVIL_RPC_URL, DEFAULT_CHAIN } from "./constants.js";
-import {
-    createE2EProvider,
-    disconnect as disconnectProvider,
-    setAccounts,
-    setChain,
-} from "./provider.js";
+import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_CHAIN } from "./constants.js";
+import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from "./provider.js";
 
 /**
  * Configuration for creating a new provider internally
  */
 export type E2EConnectorConfigParams = {
-    /** RPC URL for blockchain operations (default: http://127.0.0.1:8545) */
-    rpcUrl?: string;
+    /** Supported chains. First chain is the default. (default: [mainnet]) */
+    chains?: Chain[];
+    /**
+     * Per-chain RPC URLs mapping chainId to URL.
+     * When switching chains, the provider uses the corresponding RPC URL.
+     * @example { 1: 'http://mainnet:8545', 42161: 'http://arbitrum:8546' }
+     */
+    rpcUrls?: Record<number, string>;
     /**
      * Account for signing transactions. Can be:
      * - A private key hex string (default: Anvil's first test account)
      * - A viem Account object (for impersonation or custom accounts)
      */
     account?: Hex | Account;
-    /** Chain configuration (default: mainnet) */
-    chain?: Chain;
     /** Enable debug logging */
     debug?: boolean;
 };
@@ -48,6 +47,13 @@ export type E2EConnectorProviderParams = {
  * Either pass a pre-constructed provider OR configuration options (not both).
  */
 export type E2EConnectorParameters = E2EConnectorConfigParams | E2EConnectorProviderParams;
+
+/**
+ * Type guard: check if parameters include a pre-constructed provider
+ */
+function hasProvider(params: E2EConnectorParameters): params is E2EConnectorProviderParams {
+    return "provider" in params && params.provider !== undefined;
+}
 
 /**
  * Creates a custom Wagmi connector for e2e testing.
@@ -73,30 +79,27 @@ export type E2EConnectorParameters = E2EConnectorConfigParams | E2EConnectorProv
  *   },
  * })
  *
- * // Or with custom configuration
+ * // Or with custom configuration (multichain with per-chain RPCs)
  * const customConfig = createConfig({
- *   chains: [mainnet],
+ *   chains: [mainnet, arbitrum],
  *   connectors: [
  *     e2eConnector({
- *       rpcUrl: 'http://127.0.0.1:8545',
+ *       chains: [mainnet, arbitrum],
+ *       rpcUrls: {
+ *         1: 'http://mainnet-anvil:8545',
+ *         42161: 'http://arbitrum-anvil:8546',
+ *       },
  *       account: '0xYourPrivateKey...',
- *       chain: mainnet,
  *       debug: true,
  *     }),
  *   ],
  *   transports: {
- *     [mainnet.id]: http('http://127.0.0.1:8545'),
+ *     [mainnet.id]: http('http://mainnet-anvil:8545'),
+ *     [arbitrum.id]: http('http://arbitrum-anvil:8546'),
  *   },
  * })
  * ```
  */
-/**
- * Type guard: check if parameters include a pre-constructed provider
- */
-function hasProvider(params: E2EConnectorParameters): params is E2EConnectorProviderParams {
-    return "provider" in params && params.provider !== undefined;
-}
-
 export function e2eConnector(
     parameters: E2EConnectorParameters = {},
 ): ReturnType<typeof createConnector<E2EProvider>> {
@@ -104,13 +107,12 @@ export function e2eConnector(
     const externalProvider = hasProvider(parameters) ? parameters.provider : undefined;
 
     // Only used when creating provider internally
-    const rpcUrl = hasProvider(parameters)
-        ? DEFAULT_ANVIL_RPC_URL
-        : (parameters.rpcUrl ?? DEFAULT_ANVIL_RPC_URL);
+    const chains = hasProvider(parameters) ? undefined : parameters.chains;
+    const rpcUrls = hasProvider(parameters) ? undefined : parameters.rpcUrls;
     const accountConfig = hasProvider(parameters)
         ? DEFAULT_ANVIL_PRIVATE_KEY
         : (parameters.account ?? DEFAULT_ANVIL_PRIVATE_KEY);
-    const chain = hasProvider(parameters) ? DEFAULT_CHAIN : (parameters.chain ?? DEFAULT_CHAIN);
+    const defaultChain = chains?.[0] ?? DEFAULT_CHAIN;
     const debug = hasProvider(parameters) ? false : (parameters.debug ?? false);
 
     // Use external provider if provided, otherwise we'll create one on connect
@@ -148,8 +150,8 @@ export function e2eConnector(
                 // Ensure provider exists
                 if (!provider) {
                     const connectorConfig: E2EProviderConfig = {
-                        rpcUrl,
-                        chain,
+                        chains,
+                        rpcUrls,
                         account: accountConfig,
                         debug,
                     };
@@ -200,7 +202,7 @@ export function e2eConnector(
             },
 
             async getChainId(): Promise<number> {
-                if (!provider) return chain.id;
+                if (!provider) return defaultChain.id;
 
                 const chainIdHex = await provider.request<string>({
                     method: "eth_chainId",
@@ -212,8 +214,8 @@ export function e2eConnector(
             async getProvider(): Promise<E2EProvider> {
                 if (!provider) {
                     const connectorConfig: E2EProviderConfig = {
-                        rpcUrl,
-                        chain,
+                        chains,
+                        rpcUrls,
                         account: accountConfig,
                         debug,
                     };
@@ -230,21 +232,25 @@ export function e2eConnector(
 
             async switchChain({ chainId }): Promise<Chain> {
                 if (provider) {
+                    // This validates the chain is supported and updates internal state
                     await provider.request({
                         method: "wallet_switchEthereumChain",
                         params: [{ chainId: `0x${chainId.toString(16)}` }],
                     });
-                    setChain(provider, chainId);
                 }
 
                 config.emitter.emit("change", { chainId });
 
-                // Return the chain config - in E2E mode we accept any chain
+                // Try to return the actual chain config if available
+                const targetChain = chains?.find((c) => c.id === chainId);
+                if (targetChain) return targetChain;
+
+                // Fallback for when chains array is not provided
                 return {
                     id: chainId,
                     name: `Chain ${chainId}`,
-                    nativeCurrency: chain.nativeCurrency,
-                    rpcUrls: chain.rpcUrls,
+                    nativeCurrency: defaultChain.nativeCurrency,
+                    rpcUrls: defaultChain.rpcUrls,
                 };
             },
 
@@ -257,9 +263,9 @@ export function e2eConnector(
 
             onChainChanged(chainId): void {
                 const id = typeof chainId === "string" ? parseInt(chainId, 16) : chainId;
-                if (provider) {
-                    setChain(provider, id);
-                }
+                // Note: We don't call setChain here because this callback is triggered
+                // by the provider's chainChanged event, which means the provider already
+                // updated its internal state. We just need to forward to wagmi.
                 config.emitter.emit("change", { chainId: id });
             },
 

@@ -1,4 +1,4 @@
-import type { Account, Address, Hex } from "viem";
+import type { Account, Address, Chain, Hex } from "viem";
 import type { PrivateKeyAccount } from "viem/accounts";
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -90,13 +90,24 @@ function resolveAccount(input: SigningAccountInput): PrivateKeyAccount | Account
 interface InternalState {
     account: PrivateKeyAccount | Account;
     walletClient: ReturnType<typeof createWalletClient>;
+    chains: Chain[];
+    currentChain: Chain;
+    rpcUrl: string;
+    rpcUrls: Record<number, string>;
 }
 
 /**
- * Extended provider type that includes internal state for account switching
+ * Extended provider type that includes internal state for account and chain switching
  */
 export interface E2EProviderWithInternal extends E2EProvider {
-    __internal: InternalState;
+    __internal: {
+        account: PrivateKeyAccount | Account;
+        walletClient: ReturnType<typeof createWalletClient>;
+        chains: Chain[];
+        currentChain: Chain;
+        rpcUrl: string;
+        state: ProviderState;
+    };
 }
 
 /**
@@ -111,9 +122,12 @@ export interface E2EProviderWithInternal extends E2EProvider {
  * @example
  * ```ts
  * const provider = createE2EProvider({
- *   rpcUrl: 'http://127.0.0.1:8545', // Anvil
- *   chain: mainnet,
- *   account: '0x...privateKey', // or impersonated account
+ *   chains: [mainnet, arbitrum],
+ *   rpcUrls: {
+ *     1: 'http://mainnet-anvil:8545',
+ *     42161: 'http://arbitrum-anvil:8546',
+ *   },
+ *   account: '0x...privateKey',
  *   debug: true,
  * })
  *
@@ -123,11 +137,27 @@ export interface E2EProviderWithInternal extends E2EProvider {
  */
 export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWithInternal {
     const {
-        rpcUrl = DEFAULT_ANVIL_RPC_URL,
-        chain = DEFAULT_CHAIN,
+        chains: chainsConfig,
+        rpcUrls: rpcUrlsConfig = {},
         account: accountConfig = DEFAULT_ANVIL_PRIVATE_KEY,
         debug = false,
     } = config;
+
+    // Build supported chains array (default to mainnet if not provided)
+    const supportedChains: Chain[] = chainsConfig ?? [DEFAULT_CHAIN];
+
+    // First chain is the default
+    const initialChain = supportedChains[0] ?? DEFAULT_CHAIN;
+
+    /**
+     * Get RPC URL for a chain, falling back to default Anvil URL
+     */
+    function getRpcUrl(chainId: number): string {
+        return rpcUrlsConfig[chainId] ?? DEFAULT_ANVIL_RPC_URL;
+    }
+
+    // Get initial RPC URL for the first chain
+    const initialRpcUrl = getRpcUrl(initialChain.id);
 
     let requestId = 0;
 
@@ -140,20 +170,25 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     // Create wallet client for signing operations with explicit account
     const initialWalletClient = createWalletClient({
         account: initialAccount,
-        chain,
-        transport: http(rpcUrl),
+        chain: initialChain,
+        transport: http(initialRpcUrl),
     });
 
-    // Internal state that can be mutated by setSigningAccount
+    // Internal state that can be mutated by setSigningAccount and setChain
     const internal: InternalState = {
         account: initialAccount,
         walletClient: initialWalletClient,
+        chains: supportedChains,
+        currentChain: initialChain,
+        rpcUrl: initialRpcUrl,
+        rpcUrls: rpcUrlsConfig,
     };
 
     const state: ProviderState = {
         accounts: [initialAccount.address],
-        chainId: chain.id,
+        chainId: initialChain.id,
         isConnected: false,
+        supportedChainIds: supportedChains.map((c) => c.id),
     };
 
     const listeners: EventListeners = {
@@ -179,7 +214,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     }
 
     /**
-     * Send a JSON-RPC request to Anvil
+     * Send a JSON-RPC request to the current chain's RPC URL
      */
     async function sendJsonRpc<T>(method: string, params?: unknown[]): Promise<T> {
         const id = ++requestId;
@@ -190,9 +225,9 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
             id,
         };
 
-        log("Sending RPC request:", method, params);
+        log("Sending RPC request to", internal.rpcUrl, ":", method, params);
 
-        const response = await fetch(rpcUrl, {
+        const response = await fetch(internal.rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(request),
@@ -229,7 +264,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
 
                 // Build transaction request with proper typing
                 const txRequest = {
-                    chain,
+                    chain: internal.currentChain,
                     to: txParams.to,
                     value: txParams.value ? BigInt(txParams.value) : undefined,
                     data: txParams.data,
@@ -332,6 +367,30 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
             case "wallet_switchEthereumChain": {
                 const [{ chainId }] = params as [{ chainId: Hex }];
                 const newChainId = parseInt(chainId, 16);
+
+                // Validate chain is supported
+                if (!state.supportedChainIds.includes(newChainId)) {
+                    const error = new Error(
+                        `Chain ${newChainId} is not supported. Supported chains: ${state.supportedChainIds.join(", ")}`,
+                    );
+                    // @ts-expect-error - Adding code property to error (EIP-1193 error code)
+                    error.code = 4902; // Chain not added
+                    throw error;
+                }
+
+                // Find chain config and update internal state
+                const newChain = internal.chains.find((c) => c.id === newChainId);
+                if (newChain) {
+                    const newRpcUrl = getRpcUrl(newChainId);
+                    internal.currentChain = newChain;
+                    internal.rpcUrl = newRpcUrl;
+                    internal.walletClient = createWalletClient({
+                        account: internal.account,
+                        chain: newChain,
+                        transport: http(newRpcUrl),
+                    });
+                }
+
                 state.chainId = newChainId;
                 emit("chainChanged", chainId);
                 return null as T;
@@ -410,10 +469,25 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         internal.account = newAccount;
         internal.walletClient = createWalletClient({
             account: newAccount,
-            chain,
-            transport: http(rpcUrl),
+            chain: internal.currentChain,
+            transport: http(internal.rpcUrl),
         });
         state.accounts = [newAccount.address];
+    }
+
+    /**
+     * Update internal state when chain changes
+     */
+    function updateChain(newChain: Chain): void {
+        const newRpcUrl = getRpcUrl(newChain.id);
+        internal.currentChain = newChain;
+        internal.rpcUrl = newRpcUrl;
+        internal.walletClient = createWalletClient({
+            account: internal.account,
+            chain: newChain,
+            transport: http(newRpcUrl),
+        });
+        state.chainId = newChain.id;
     }
 
     return {
@@ -428,12 +502,27 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
             get walletClient(): ReturnType<typeof createWalletClient> {
                 return internal.walletClient;
             },
+            get chains(): Chain[] {
+                return internal.chains;
+            },
+            get currentChain(): Chain {
+                return internal.currentChain;
+            },
+            get rpcUrl(): string {
+                return internal.rpcUrl;
+            },
+            get state(): ProviderState {
+                return state;
+            },
             set account(newAccount: PrivateKeyAccount | Account) {
                 updateSigningAccount(newAccount);
             },
             set walletClient(_) {
                 // walletClient is derived from account, so we don't allow direct setting
                 throw new Error("Cannot set walletClient directly. Use setSigningAccount instead.");
+            },
+            set currentChain(newChain: Chain) {
+                updateChain(newChain);
             },
         },
     };
@@ -447,9 +536,62 @@ export function setAccounts(provider: E2EProvider, accounts: Address[]): void {
 }
 
 /**
- * Updates the provider state with a new chain
+ * Changes the active chain used by the provider.
+ * This updates the internal wallet client, RPC URL, and emits a chainChanged event.
+ *
+ * @param provider - The E2E provider instance (must be created with createE2EProvider)
+ * @param chainId - The chain ID to switch to. Must be in the provider's supported chains.
+ *
+ * @throws Error if the chain is not in the provider's supported chains list
+ *
+ * @example
+ * ```ts
+ * import { arbitrum, mainnet } from 'viem/chains';
+ *
+ * const provider = createE2EProvider({
+ *   chains: [mainnet, arbitrum],
+ *   rpcUrls: {
+ *     1: 'http://mainnet-anvil:8545',
+ *     42161: 'http://arbitrum-anvil:8546',
+ *   },
+ * });
+ *
+ * // Switch to Arbitrum (provider now uses arbitrum RPC)
+ * setChain(provider, arbitrum.id);
+ *
+ * // Verify the switch
+ * const chainId = await provider.request({ method: 'eth_chainId' });
+ * console.log(chainId); // '0xa4b1' (42161 in hex)
+ * ```
  */
 export function setChain(provider: E2EProvider, chainId: number): void {
+    const providerWithInternal = provider as E2EProviderWithInternal;
+
+    if (!providerWithInternal.__internal) {
+        throw new Error(
+            "Provider does not support setChain. Make sure you're using a provider created with createE2EProvider.",
+        );
+    }
+
+    const { chains, state } = providerWithInternal.__internal;
+
+    // Validate chain is supported
+    if (!state.supportedChainIds.includes(chainId)) {
+        throw new Error(
+            `Chain ${chainId} is not supported. Supported chains: ${state.supportedChainIds.join(", ")}`,
+        );
+    }
+
+    // Find chain config
+    const newChain = chains.find((c) => c.id === chainId);
+    if (!newChain) {
+        throw new Error(`Chain config not found for chain ID ${chainId}`);
+    }
+
+    // Update internal state (this recreates the wallet client)
+    providerWithInternal.__internal.currentChain = newChain;
+
+    // Emit chainChanged event
     const chainIdHex = `0x${chainId.toString(16)}` as Hex;
     provider.emit("chainChanged", chainIdHex);
 }
