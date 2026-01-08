@@ -143,3 +143,11 @@ export type TypedData = {
     primaryType: string;
     message: Record<string, unknown>;
 };
+
+/**
+ * Addresses with optional capabilities
+ */
+export type AddressesWithCapabilities<withCapabilities extends boolean = false> =
+    withCapabilities extends true
+        ? readonly { address: `0x${string}`; capabilities: Record<string, unknown> }[]
+        : readonly `0x${string}`[];

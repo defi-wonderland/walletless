@@ -239,6 +239,67 @@ test("should swap tokens", async ({ page }) => {
 });
 ```
 
+### As a RainbowKit custom Wallet
+
+To instantiate an e2eWallet compatible with rainbowkit, you can do the following :
+
+```typescript
+import { Wallet, WalletDetailsParams } from "@rainbow-me/rainbowkit";
+import { e2eConnector } from "@wonderland/walletless";
+
+export const e2eWallet = (): Wallet => ({
+  id: "e2e",
+  name: "E2E Test Wallet",
+  iconUrl:
+    'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%234F46E5" width="100" height="100" rx="20"/><text x="50" y="65" font-size="50" text-anchor="middle" fill="white">E2E</text></svg>',
+  iconBackground: "#4F46E5",
+  installed: true,
+  createConnector: (walletDetails: WalletDetailsParams) => {
+    // Create the E2E connector (this returns a CreateConnectorFn)
+    const connector = e2eConnector({
+      rpcUrls: {
+        [sepolia.id]: "http://127.0.0.1:8545",
+        [mainnet.id]: "http://127.0.0.1:8546",
+      },
+      chains: [sepolia, mainnet],
+    });
+
+    // Wrap it in the format expected by RainbowKit
+    return createConnector((config) => ({
+      ...connector(config),
+      ...walletDetails,
+    }));
+  },
+});
+```
+
+It will create a custom rainbowkit wallet using walletless as connector. Then your wagmi config would look like this:
+
+```typescript
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: "Recommended",
+      wallets: isE2E ? [e2eWallet] : [injectedWallet],
+    },
+  ],
+  {
+    appName: "Web3 React boilerplate",
+    projectId: PROJECT_ID,
+  },
+);
+
+export const config = createConfig({
+  chains: [sepolia, mainnet],
+  transports: {
+    [sepolia.id]: isE2E ? http("http://127.0.0.1:8545") : http(),
+    [mainnet.id]:  isE2E ? http("http://127.0.0.1:8546") : http(),
+  },
+  // ...rest of your wagmi config...
+});
+```
+
+
 ## Configuration
 
 ### E2EConnectorParameters (Wagmi)
