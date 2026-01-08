@@ -36,6 +36,9 @@ jobs:
       - name: Run Build
         run: pnpm build
 
+      - name: Update npm (for OIDC support)
+        run: npm install -g npm@11.5.2
+
       - name: Publish snapshot (dev branch)
         if: github.ref == 'refs/heads/dev'
         run: npm publish --access public --tag snapshot
