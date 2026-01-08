@@ -51,14 +51,6 @@ Real-world performance comparison using identical test suites on the same Next.j
 1. Connect wallet via RainbowKit modal
 2. Connect + execute 1 ETH transfer
 
-```mermaid
-xychart horizontal
-    title "E2E Test Execution Time (seconds)"
-    x-axis ["Walletless + Playwrigh", "Synpress + Playwright"]
-    y-axis "Time (s)" 0 --> 40
-    bar [2.10, 34.50]
-```
-
 ## Installation
 
 ```bash
