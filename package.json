@@ -1,6 +1,6 @@
 {
     "name": "@wonderland/walletless",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "private": false,
     "description": "Virtual EIP-1193 provider for E2E testing with Wagmi connector",
     "keywords": [

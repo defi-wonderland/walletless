@@ -36,6 +36,21 @@ You get production-realistic chains with test-level control.
 -   **Total Control**: Simulate edge cases like RPC errors, specific error codes, delayed signatures, chain switching failures
 -   **CI/CD Friendly**: Runs effortlessly in headless browsers and Docker containers
 
+## Benchmarks
+
+Real-world performance comparison using identical test suites on the same Next.js boilerplate:
+
+| Metric | Synpress | Walletless | Speedup |
+| ------ | -------: | ---------: | ------: |
+| Real   |   34.50s |      2.10s | **16x** |
+| User   |   24.24s |      2.98s |  **8x** |
+| Sys    |    5.34s |      0.75s |  **7x** |
+
+**Test suite:**
+
+1. Connect wallet via RainbowKit modal
+2. Connect + execute 1 ETH transfer
+
 ## Installation
 
 ```bash
@@ -248,28 +263,28 @@ import { Wallet, WalletDetailsParams } from "@rainbow-me/rainbowkit";
 import { e2eConnector } from "@wonderland/walletless";
 
 export const e2eWallet = (): Wallet => ({
-  id: "e2e",
-  name: "E2E Test Wallet",
-  iconUrl:
-    'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%234F46E5" width="100" height="100" rx="20"/><text x="50" y="65" font-size="50" text-anchor="middle" fill="white">E2E</text></svg>',
-  iconBackground: "#4F46E5",
-  installed: true,
-  createConnector: (walletDetails: WalletDetailsParams) => {
-    // Create the E2E connector (this returns a CreateConnectorFn)
-    const connector = e2eConnector({
-      rpcUrls: {
-        [sepolia.id]: "http://127.0.0.1:8545",
-        [mainnet.id]: "http://127.0.0.1:8546",
-      },
-      chains: [sepolia, mainnet],
-    });
+    id: "e2e",
+    name: "E2E Test Wallet",
+    iconUrl:
+        'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%234F46E5" width="100" height="100" rx="20"/><text x="50" y="65" font-size="50" text-anchor="middle" fill="white">E2E</text></svg>',
+    iconBackground: "#4F46E5",
+    installed: true,
+    createConnector: (walletDetails: WalletDetailsParams) => {
+        // Create the E2E connector (this returns a CreateConnectorFn)
+        const connector = e2eConnector({
+            rpcUrls: {
+                [sepolia.id]: "http://127.0.0.1:8545",
+                [mainnet.id]: "http://127.0.0.1:8546",
+            },
+            chains: [sepolia, mainnet],
+        });
 
-    // Wrap it in the format expected by RainbowKit
-    return createConnector((config) => ({
-      ...connector(config),
-      ...walletDetails,
-    }));
-  },
+        // Wrap it in the format expected by RainbowKit
+        return createConnector((config) => ({
+            ...connector(config),
+            ...walletDetails,
+        }));
+    },
 });
 ```
 
@@ -277,28 +292,27 @@ It will create a custom rainbowkit wallet using walletless as connector. Then yo
 
 ```typescript
 const connectors = connectorsForWallets(
-  [
+    [
+        {
+            groupName: "Recommended",
+            wallets: isE2E ? [e2eWallet] : [injectedWallet],
+        },
+    ],
     {
-      groupName: "Recommended",
-      wallets: isE2E ? [e2eWallet] : [injectedWallet],
+        appName: "Web3 React boilerplate",
+        projectId: PROJECT_ID,
     },
-  ],
-  {
-    appName: "Web3 React boilerplate",
-    projectId: PROJECT_ID,
-  },
 );
 
 export const config = createConfig({
-  chains: [sepolia, mainnet],
-  transports: {
-    [sepolia.id]: isE2E ? http("http://127.0.0.1:8545") : http(),
-    [mainnet.id]:  isE2E ? http("http://127.0.0.1:8546") : http(),
-  },
-  // ...rest of your wagmi config...
+    chains: [sepolia, mainnet],
+    transports: {
+        [sepolia.id]: isE2E ? http("http://127.0.0.1:8545") : http(),
+        [mainnet.id]: isE2E ? http("http://127.0.0.1:8546") : http(),
+    },
+    // ...rest of your wagmi config...
 });
 ```
-
 
 ## Configuration
 
