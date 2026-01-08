@@ -532,13 +532,6 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
 }
 
 /**
- * Updates the provider state with new accounts
- */
-export function setAccounts(provider: E2EProvider, accounts: Address[]): void {
-    provider.emit("accountsChanged", accounts);
-}
-
-/**
  * Changes the active chain used by the provider.
  * This updates the internal wallet client, RPC URL, and emits a chainChanged event.
  *

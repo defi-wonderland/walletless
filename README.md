@@ -116,7 +116,6 @@ import {
     ANVIL_ACCOUNTS,
     createE2EProvider,
     disconnect,
-    setAccounts,
     setChain,
     setSigningAccount,
 } from "@wonderland/walletless";
@@ -140,9 +139,6 @@ setSigningAccount(provider, privateKeyToAccount("0x..."));
 // Access Anvil accounts directly
 console.log(ANVIL_ACCOUNTS[0].address); // 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 console.log(ANVIL_ACCOUNTS[0].privateKey);
-
-// Update accounts (emits accountsChanged event)
-setAccounts(provider, ["0xNewAddress..."]);
 
 // Disconnect (emits disconnect event)
 disconnect(provider);

@@ -7,13 +7,7 @@ export type {
 } from "./connector.js";
 
 // Provider utilities for test control
-export {
-    createE2EProvider,
-    setAccounts,
-    setChain,
-    disconnect,
-    setSigningAccount,
-} from "./provider.js";
+export { createE2EProvider, setChain, disconnect, setSigningAccount } from "./provider.js";
 export type { E2EProviderWithInternal, SigningAccountInput } from "./provider.js";
 
 // Type exports
