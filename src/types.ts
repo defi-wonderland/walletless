@@ -19,7 +19,7 @@ export type CompatibleChain = {
  */
 export type E2EProviderConfig = {
     /** Supported chains. First chain is the default. (default: [mainnet]) */
-    chains?: readonly CompatibleChain[];
+    chains?: readonly Chain[];
     /**
      * Per-chain RPC URLs mapping chainId to URL.
      * When switching chains, the provider uses the corresponding RPC URL.
@@ -143,3 +143,11 @@ export type TypedData = {
     primaryType: string;
     message: Record<string, unknown>;
 };
+
+/**
+ * Addresses with optional capabilities
+ */
+export type AddressesWithCapabilities<withCapabilities extends boolean = false> =
+    withCapabilities extends true
+        ? readonly { address: `0x${string}`; capabilities: Record<string, unknown> }[]
+        : readonly `0x${string}`[];

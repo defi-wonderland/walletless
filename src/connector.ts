@@ -3,7 +3,7 @@ import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createConnector } from "wagmi";
 
-import type { CompatibleChain, E2EProvider, E2EProviderConfig } from "./types.js";
+import type { AddressesWithCapabilities, E2EProvider, E2EProviderConfig } from "./types.js";
 import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_CHAIN } from "./constants.js";
 import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from "./provider.js";
 
@@ -12,7 +12,7 @@ import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from
  */
 export type E2EConnectorConfigParams = {
     /** Supported chains. First chain is the default. (default: [mainnet]) */
-    chains?: readonly CompatibleChain[];
+    chains?: readonly Chain[];
     /**
      * Per-chain RPC URLs mapping chainId to URL.
      * When switching chains, the provider uses the corresponding RPC URL.
@@ -118,7 +118,7 @@ export function e2eConnector(
     // Use external provider if provided, otherwise we'll create one on connect
     let provider: E2EProvider | undefined = externalProvider;
 
-    return createConnector<E2EProvider>((config) => {
+    return createConnector((config) => {
         return {
             id: "e2e-connector",
             name: "E2E Connector",
@@ -143,8 +143,12 @@ export function e2eConnector(
                 }
             },
 
-            async connect({ chainId } = {}): Promise<{
-                accounts: readonly Address[];
+            async connect<withCapabilities extends boolean = false>({
+                chainId,
+            }: {
+                chainId?: number;
+            }): Promise<{
+                accounts: AddressesWithCapabilities<withCapabilities>;
                 chainId: number;
             }> {
                 // Ensure provider exists
@@ -159,7 +163,7 @@ export function e2eConnector(
                 }
 
                 // Query accounts from the provider
-                const accounts = await provider.request<Address[]>({
+                const accounts = await provider.request<AddressesWithCapabilities>({
                     method: "eth_accounts",
                 });
 
@@ -170,7 +174,7 @@ export function e2eConnector(
                 const targetChainId = chainId ?? parseInt(providerChainId, 16);
 
                 return {
-                    accounts,
+                    accounts: accounts as AddressesWithCapabilities<withCapabilities>,
                     chainId: targetChainId,
                 };
             },

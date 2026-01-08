@@ -4,7 +4,6 @@ import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 import type {
-    CompatibleChain,
     E2EProvider,
     E2EProviderConfig,
     JsonRpcRequest,
@@ -91,8 +90,8 @@ function resolveAccount(input: SigningAccountInput): PrivateKeyAccount | Account
 interface InternalState {
     account: PrivateKeyAccount | Account;
     walletClient: ReturnType<typeof createWalletClient>;
-    chains: CompatibleChain[];
-    currentChain: CompatibleChain;
+    chains: Chain[];
+    currentChain: Chain;
     rpcUrl: string;
     rpcUrls: Record<number, string>;
 }
@@ -104,8 +103,8 @@ export interface E2EProviderWithInternal extends E2EProvider {
     __internal: {
         account: PrivateKeyAccount | Account;
         walletClient: ReturnType<typeof createWalletClient>;
-        chains: CompatibleChain[];
-        currentChain: CompatibleChain;
+        chains: Chain[];
+        currentChain: Chain;
         rpcUrl: string;
         state: ProviderState;
     };
@@ -145,9 +144,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     } = config;
 
     // Build supported chains array (default to mainnet if not provided)
-    const supportedChains: CompatibleChain[] = (chainsConfig as CompatibleChain[] | undefined) ?? [
-        DEFAULT_CHAIN,
-    ];
+    const supportedChains: Chain[] = (chainsConfig as Chain[] | undefined) ?? [DEFAULT_CHAIN];
 
     // First chain is the default
     const initialChain = supportedChains[0] ?? DEFAULT_CHAIN;
@@ -382,7 +379,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                 }
 
                 // Find chain config and update internal state
-                const newChain = internal.chains.find((c: CompatibleChain) => c.id === newChainId);
+                const newChain = internal.chains.find((c: Chain) => c.id === newChainId);
                 if (newChain) {
                     const newRpcUrl = getRpcUrl(newChainId);
                     internal.currentChain = newChain;
@@ -481,7 +478,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     /**
      * Update internal state when chain changes
      */
-    function updateChain(newChain: CompatibleChain): void {
+    function updateChain(newChain: Chain): void {
         const newRpcUrl = getRpcUrl(newChain.id);
         internal.currentChain = newChain;
         internal.rpcUrl = newRpcUrl;
@@ -505,10 +502,10 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
             get walletClient(): ReturnType<typeof createWalletClient> {
                 return internal.walletClient;
             },
-            get chains(): CompatibleChain[] {
+            get chains(): Chain[] {
                 return internal.chains;
             },
-            get currentChain(): CompatibleChain {
+            get currentChain(): Chain {
                 return internal.currentChain;
             },
             get rpcUrl(): string {
@@ -524,7 +521,7 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                 // walletClient is derived from account, so we don't allow direct setting
                 throw new Error("Cannot set walletClient directly. Use setSigningAccount instead.");
             },
-            set currentChain(newChain: CompatibleChain) {
+            set currentChain(newChain: Chain) {
                 updateChain(newChain);
             },
         },
