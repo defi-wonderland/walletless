@@ -39,6 +39,10 @@ jobs:
       - name: Update npm (for OIDC support)
         run: npm install -g npm@11.5.2
 
+      - name: Update version (dev branch)
+        if: github.ref == 'refs/heads/dev'
+        run: pnpm version --new-version "0.0.0-snapshot.${GITHUB_SHA::8}" --no-git-tag-version
+
       - name: Publish snapshot (dev branch)
         if: github.ref == 'refs/heads/dev'
         run: npm publish --access public --tag snapshot
