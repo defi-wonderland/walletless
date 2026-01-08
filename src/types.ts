@@ -19,7 +19,7 @@ export type CompatibleChain = {
  */
 export type E2EProviderConfig = {
     /** Supported chains. First chain is the default. (default: [mainnet]) */
-    chains?: readonly Chain[];
+    chains?: readonly CompatibleChain[];
     /**
      * Per-chain RPC URLs mapping chainId to URL.
      * When switching chains, the provider uses the corresponding RPC URL.

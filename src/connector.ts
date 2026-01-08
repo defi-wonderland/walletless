@@ -3,7 +3,12 @@ import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createConnector } from "wagmi";
 
-import type { AddressesWithCapabilities, E2EProvider, E2EProviderConfig } from "./types.js";
+import type {
+    AddressesWithCapabilities,
+    CompatibleChain,
+    E2EProvider,
+    E2EProviderConfig,
+} from "./types.js";
 import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_CHAIN } from "./constants.js";
 import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from "./provider.js";
 
@@ -12,7 +17,7 @@ import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from
  */
 export type E2EConnectorConfigParams = {
     /** Supported chains. First chain is the default. (default: [mainnet]) */
-    chains?: readonly Chain[];
+    chains?: readonly CompatibleChain[];
     /**
      * Per-chain RPC URLs mapping chainId to URL.
      * When switching chains, the provider uses the corresponding RPC URL.
