@@ -202,8 +202,15 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         message: new Set(),
     };
 
-    function log(...args: unknown[]): void {
-        if (debug) console.log("[Walletless-Provider]", ...args);
+    function log(message: string, data?: unknown, id?: number): void {
+        if (!debug) return;
+        const idSuffix = id !== undefined ? `${id}` : "";
+        const prefix = `[ Walletless ] request: ${idSuffix}`;
+        if (data !== undefined) {
+            console.log(`${prefix} `, { internal }, `\n${message.toUpperCase()}`, data);
+        } else {
+            console.log(prefix, message);
+        }
     }
 
     function emit<K extends keyof ProviderEvents>(
@@ -219,24 +226,26 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     /**
      * Send a JSON-RPC request to the current chain's RPC URL
      */
-    async function sendJsonRpc<T>(method: string, params?: unknown[]): Promise<T> {
+    async function sendJsonRpc<T>(method: string, params?: unknown[], logId?: number): Promise<T> {
         const id = ++requestId;
-        const request: JsonRpcRequest = {
+        const rpcRequest: JsonRpcRequest = {
             jsonrpc: "2.0",
             method,
             params,
             id,
         };
 
-        log("Sending RPC request to", internal.rpcUrl, ":", method, params);
+        log(`${method} -> ${internal.rpcUrl}`, rpcRequest, logId ?? id);
 
         const response = await fetch(internal.rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(request),
+            body: JSON.stringify(rpcRequest),
         });
 
         const data: JsonRpcResponse<T> = (await response.json()) as JsonRpcResponse<T>;
+
+        log(`${method} <- ${internal.rpcUrl}`, data, logId ?? id);
 
         if (data.error) {
             const error = new Error(data.error.message);
@@ -251,15 +260,25 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
     /**
      * Handle read methods by sending to Anvil RPC
      */
-    async function handleReadMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        return sendJsonRpc<T>(method, params);
+    async function handleReadMethod<T>(
+        method: string,
+        params?: unknown[],
+        logId?: number,
+    ): Promise<T> {
+        return sendJsonRpc<T>(method, params, logId);
     }
 
     /**
      * Handle write operations with local signing
      */
-    async function handleWriteMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        log("Handling write method:", method, params);
+    async function handleWriteMethod<T>(
+        method: string,
+        params?: unknown[],
+        logId?: number,
+    ): Promise<T> {
+        log("incoming", { method, params }, logId);
+
+        let result: T;
 
         switch (method) {
             case "eth_sendTransaction": {
@@ -290,7 +309,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                     ...txRequest,
                     account: internal.account,
                 });
-                return hash as T;
+                result = hash as T;
+                break;
             }
 
             case "personal_sign": {
@@ -300,7 +320,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                     account: internal.account,
                     message: { raw: message },
                 });
-                return signature as T;
+                result = signature as T;
+                break;
             }
 
             case "eth_sign": {
@@ -310,7 +331,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                     account: internal.account,
                     message: { raw: ethSignMessage },
                 });
-                return ethSignature as T;
+                result = ethSignature as T;
+                break;
             }
 
             case "eth_signTypedData":
@@ -330,41 +352,56 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
                     primaryType: typedData.primaryType,
                     message: typedData.message,
                 });
-                return typedDataSignature as T;
+                result = typedDataSignature as T;
+                break;
             }
 
             case "eth_sendRawTransaction": {
-                // Forward raw transaction to Anvil
-                return sendJsonRpc<T>(method, params);
+                // Forward raw transaction to Anvil (already logs via sendJsonRpc)
+                result = await sendJsonRpc<T>(method, params, logId);
+                break;
             }
 
             default:
                 throw new Error(`Unsupported write method: ${method}`);
         }
+
+        log("outgoing", { method, result }, logId);
+        return result;
     }
 
     /**
      * Handle wallet/account methods
      */
-    async function handleWalletMethod<T>(method: string, params?: unknown[]): Promise<T> {
-        log("Handling wallet method:", method, params);
+    async function handleWalletMethod<T>(
+        method: string,
+        params?: unknown[],
+        logId?: number,
+    ): Promise<T> {
+        log("incoming", { method, params }, logId);
+
+        let result: T;
 
         switch (method) {
             case "eth_accounts":
-                return state.accounts as T;
+                result = state.accounts as T;
+                break;
 
             case "eth_chainId":
-                return `0x${state.chainId.toString(16)}` as T;
+                result = `0x${state.chainId.toString(16)}` as T;
+                break;
 
             case "net_version":
-                return state.chainId.toString() as T;
+                result = state.chainId.toString() as T;
+                break;
 
             case "eth_requestAccounts": {
                 if (!state.isConnected) {
                     state.isConnected = true;
                     emit("connect", { chainId: `0x${state.chainId.toString(16)}` as Hex });
                 }
-                return state.accounts as T;
+                result = state.accounts as T;
+                break;
             }
 
             case "wallet_switchEthereumChain": {
@@ -396,23 +433,29 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
 
                 state.chainId = newChainId;
                 emit("chainChanged", chainId);
-                return null as T;
+                result = null as T;
+                break;
             }
 
             case "wallet_addEthereumChain": {
                 // In E2E testing, we just accept the chain addition
-                return null as T;
+                result = null as T;
+                break;
             }
 
             case "wallet_requestPermissions":
             case "wallet_getPermissions": {
                 // Return mock permissions
-                return [{ parentCapability: "eth_accounts" }] as T;
+                result = [{ parentCapability: "eth_accounts" }] as T;
+                break;
             }
 
             default:
                 throw new Error(`Unsupported wallet method: ${method}`);
         }
+
+        log("outgoing", { method, result }, logId);
+        return result;
     }
 
     /**
@@ -425,27 +468,27 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         method: string;
         params?: unknown[];
     }): Promise<T> {
-        log("Request:", method, params);
+        const logId = ++requestId;
 
         // Route to appropriate handler based on method type
         // Wallet methods first (they handle local state like chainId, accounts)
         if (isWalletMethod(method)) {
-            return handleWalletMethod<T>(method, params);
+            return handleWalletMethod<T>(method, params, logId);
         }
 
         // Write/signing methods
         if (isWriteMethod(method)) {
-            return handleWriteMethod<T>(method, params);
+            return handleWriteMethod<T>(method, params, logId);
         }
 
         // Read methods go to RPC
         if (isReadMethod(method)) {
-            return handleReadMethod<T>(method, params);
+            return handleReadMethod<T>(method, params, logId);
         }
 
         // Fallback: try as read method (for any unknown methods)
-        log("Unknown method, forwarding to RPC:", method);
-        return sendJsonRpc<T>(method, params);
+        log(`Unknown method ${method}, forwarding to RPC`, undefined, logId);
+        return sendJsonRpc<T>(method, params, logId);
     }
 
     /**
