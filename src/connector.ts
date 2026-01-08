@@ -5,7 +5,7 @@ import { createConnector } from "wagmi";
 
 import type { CompatibleChain, E2EProvider, E2EProviderConfig } from "./types.js";
 import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_CHAIN } from "./constants.js";
-import { createE2EProvider, disconnect as disconnectProvider, setAccounts } from "./provider.js";
+import { createE2EProvider, disconnect as disconnectProvider } from "./provider.js";
 
 /**
  * Configuration for creating a new provider internally
@@ -255,8 +255,8 @@ export function e2eConnector(
             },
 
             onAccountsChanged(accounts): void {
-                if (provider && accounts.length > 0) {
-                    setAccounts(provider, accounts as Address[]);
+                if (provider) {
+                    provider.emit("accountsChanged", accounts as Address[]);
                 }
                 config.emitter.emit("change", { accounts: accounts as readonly Address[] });
             },

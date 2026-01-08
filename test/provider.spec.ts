@@ -5,13 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { E2EProviderConfig } from "../src/types.js";
 import { ANVIL_ACCOUNTS } from "../src/constants.js";
-import {
-    createE2EProvider,
-    disconnect,
-    setAccounts,
-    setChain,
-    setSigningAccount,
-} from "../src/provider.js";
+import { createE2EProvider, disconnect, setChain, setSigningAccount } from "../src/provider.js";
 
 // Anvil's first test private key
 const TEST_PRIVATE_KEY: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -298,19 +292,6 @@ describe("createE2EProvider", () => {
                 provider.request({ method: "eth_signTransaction", params: [] }),
             ).rejects.toThrow("Unsupported");
         });
-    });
-});
-
-describe("setAccounts", () => {
-    it("should emit accountsChanged event", () => {
-        const provider = createE2EProvider(baseConfig);
-        const handler = vi.fn();
-        const newAccounts: Address[] = ["0xNewAddress1234567890123456789012345678" as Address];
-
-        provider.on("accountsChanged", handler);
-        setAccounts(provider, newAccounts);
-
-        expect(handler).toHaveBeenCalledWith(newAccounts);
     });
 });
 
