@@ -76,7 +76,7 @@ export const config = createConfig({
               /* real wallets */
           ],
     transports: {
-        [mainnet.id]: http("http://127.0.0.1:8545"),
+        [mainnet.id]: isE2E ? http("http://localhost:8545") : http(),
     },
 });
 ```
@@ -86,24 +86,24 @@ export const config = createConfig({
 ```typescript
 import { e2eConnector } from "@wonderland/walletless";
 import { createConfig, http } from "wagmi";
-import { arbitrum, mainnet, optimism } from "wagmi/chains";
+import { arbitrum, mainnet } from "wagmi/chains";
 
 export const config = createConfig({
-    chains: [mainnet, arbitrum, optimism],
+    chains: [mainnet, arbitrum],
     connectors: [
         e2eConnector({
-            chains: [mainnet, arbitrum, optimism],
+            chains: [mainnet, arbitrum],
             rpcUrls: {
-                1: "http://mainnet-anvil:8545",
-                42161: "http://arbitrum-anvil:8546",
+                1: "http://localhost:8545",
+                42161: "http://localhost:8546",
             },
             account: "0xYourPrivateKey...",
             debug: true,
         }),
     ],
     transports: {
-        [mainnet.id]: http("http://mainnet-anvil:8545"),
-        [arbitrum.id]: http("http://arbitrum-anvil:8546"),
+        [mainnet.id]: http("http://localhost:8545"),
+        [arbitrum.id]: http("http://localhost:8546"),
     },
 });
 ```
@@ -169,9 +169,9 @@ import { arbitrum, mainnet, optimism } from "viem/chains";
 const provider = createE2EProvider({
     chains: [mainnet, arbitrum, optimism],
     rpcUrls: {
-        1: "http://mainnet-anvil:8545",
-        42161: "http://arbitrum-anvil:8546",
-        10: "http://optimism-anvil:8547",
+        1: "http://localhost:8545",
+        42161: "http://localhost:8546",
+        10: "http://localhost:8547",
     },
 });
 
@@ -214,8 +214,8 @@ import { arbitrum, mainnet } from "wagmi/chains";
 const provider = createE2EProvider({
     chains: [mainnet, arbitrum],
     rpcUrls: {
-        1: "http://mainnet-anvil:8545",
-        42161: "http://arbitrum-anvil:8546",
+        1: "http://localhost:8545",
+        42161: "http://localhost:8546",
     },
 });
 
@@ -223,8 +223,8 @@ export const config = createConfig({
     chains: [mainnet, arbitrum],
     connectors: [e2eConnector({ provider })],
     transports: {
-        [mainnet.id]: http("http://mainnet-anvil:8545"),
-        [arbitrum.id]: http("http://arbitrum-anvil:8546"),
+        [mainnet.id]: http("http://localhost:8545"),
+        [arbitrum.id]: http("http://localhost:8546"),
     },
 });
 
@@ -273,8 +273,8 @@ export const e2eWallet = (): Wallet => ({
         // Create the E2E connector (this returns a CreateConnectorFn)
         const connector = e2eConnector({
             rpcUrls: {
-                [sepolia.id]: "http://127.0.0.1:8545",
-                [mainnet.id]: "http://127.0.0.1:8546",
+                [sepolia.id]: "http://localhost:8545",
+                [mainnet.id]: "http://localhost:8546",
             },
             chains: [sepolia, mainnet],
         });
@@ -307,9 +307,10 @@ const connectors = connectorsForWallets(
 export const config = createConfig({
     chains: [sepolia, mainnet],
     transports: {
-        [sepolia.id]: isE2E ? http("http://127.0.0.1:8545") : http(),
-        [mainnet.id]: isE2E ? http("http://127.0.0.1:8546") : http(),
+        [sepolia.id]: isE2E ? http("http://localhost:8545") : http(),
+        [mainnet.id]: isE2E ? http("http://localhost:8546") : http(),
     },
+    connectors,
     // ...rest of your wagmi config...
 });
 ```
@@ -331,7 +332,7 @@ The connector accepts **either** a pre-constructed provider **or** configuration
 | Parameter | Type                     | Default                        | Description                                                                       |
 | --------- | ------------------------ | ------------------------------ | --------------------------------------------------------------------------------- |
 | `chains`  | `Chain[]`                | `[mainnet]`                    | Supported chains (first chain is default)                                         |
-| `rpcUrls` | `Record<number, string>` | `{}`                           | Per-chain RPC URLs mapping chainId to URL. Falls back to `http://127.0.0.1:8545`. |
+| `rpcUrls` | `Record<number, string>` | `{}`                           | Per-chain RPC URLs mapping chainId to URL. Falls back to `http://localhost:8545`. |
 | `account` | `Hex \| Account`         | Anvil's first test private key | Private key or viem Account for signing                                           |
 | `debug`   | `boolean`                | `false`                        | Enable debug logging                                                              |
 
@@ -342,7 +343,7 @@ All parameters are optional with sensible Anvil defaults:
 | Parameter | Type                     | Default                        | Description                                                                       |
 | --------- | ------------------------ | ------------------------------ | --------------------------------------------------------------------------------- |
 | `chains`  | `Chain[]`                | `[mainnet]`                    | Supported chains (first chain is default)                                         |
-| `rpcUrls` | `Record<number, string>` | `{}`                           | Per-chain RPC URLs mapping chainId to URL. Falls back to `http://127.0.0.1:8545`. |
+| `rpcUrls` | `Record<number, string>` | `{}`                           | Per-chain RPC URLs mapping chainId to URL. Falls back to `http://localhost:8545`. |
 | `account` | `Hex \| Account`         | Anvil's first test private key | Private key or viem Account for signing                                           |
 | `debug`   | `boolean`                | `false`                        | Enable debug logging                                                              |
 
