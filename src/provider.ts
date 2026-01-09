@@ -207,7 +207,19 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         const idSuffix = requestId !== undefined ? `${requestId}` : "";
         const prefix = `[ Walletless ] request: ${idSuffix}`;
         if (data !== undefined) {
-            console.log(`${prefix} `, { internal }, `\n${message.toUpperCase()}`, data);
+            console.log(
+                `${prefix} `,
+                {
+                    internal: {
+                        account: internal.account.address,
+                        chain: internal.currentChain.id,
+                        rpcUrl: internal.rpcUrl,
+                    },
+                },
+                `\n${message.toUpperCase()}`,
+                data,
+                "\n",
+            );
         } else {
             console.log(prefix, message);
         }
