@@ -1,5 +1,7 @@
 # @wonderland/walletless
 
+[![image](https://img.shields.io/npm/v/@wonderland/walletless.svg?style=flat-square)](https://www.npmjs.org/package/@wonderland/walletless)
+
 Lightweight E2E Provider for Web3 DApps - A virtual EIP-1193 provider that enables deterministic, high-performance E2E testing.
 
 ## Overview
