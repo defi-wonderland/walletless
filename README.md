@@ -132,6 +132,8 @@ import {
     createE2EProvider,
     disconnect,
     setChain,
+    setRejectSignature,
+    setRejectTransaction,
     setSigningAccount,
 } from "@wonderland/walletless";
 // Switch by viem Account object (for custom accounts)
@@ -157,6 +159,12 @@ console.log(ANVIL_ACCOUNTS[0].privateKey);
 
 // Disconnect (emits disconnect event)
 disconnect(provider);
+
+// Reject signatures (throws 4001 "User Rejected Request" error)
+setRejectSignature(provider, true);
+
+// Reject transactions (throws 4001 "User Rejected Request" error)
+setRejectTransaction(provider, true);
 ```
 
 ### Multichain + chain switching

@@ -3,9 +3,16 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum, mainnet, optimism } from "viem/chains";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { E2EProviderConfig } from "../src/types.js";
 import { ANVIL_ACCOUNTS } from "../src/constants.js";
-import { createE2EProvider, disconnect, setChain, setSigningAccount } from "../src/provider.js";
+import {
+    createE2EProvider,
+    disconnect,
+    setChain,
+    setRejectSignature,
+    setRejectTransaction,
+    setSigningAccount,
+} from "../src/provider.js";
+import { E2EProviderConfig, ProviderErrorCode, ProviderRpcError } from "../src/types.js";
 
 // Anvil's first test private key
 const TEST_PRIVATE_KEY: Hex = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -722,5 +729,198 @@ describe("setSigningAccount", () => {
             });
             expect(accounts).toEqual([ANVIL_ACCOUNTS[5]!.address]);
         });
+    });
+});
+
+describe("setRejectSignature", () => {
+    it("should reject personal_sign with 4001 error when enabled", async () => {
+        const provider = createE2EProvider(baseConfig);
+
+        setRejectSignature(provider, true);
+
+        await expect(
+            provider.request({
+                method: "personal_sign",
+                params: ["0x48656c6c6f", TEST_ADDRESS],
+            }),
+        ).rejects.toMatchObject({
+            code: ProviderErrorCode.UserRejectedRequest,
+            message: "User rejected the signature request.",
+        });
+    });
+
+    it("should reject eth_sign with 4001 error when enabled", async () => {
+        const provider = createE2EProvider(baseConfig);
+
+        setRejectSignature(provider, true);
+
+        await expect(
+            provider.request({
+                method: "eth_sign",
+                params: [TEST_ADDRESS, "0x48656c6c6f"],
+            }),
+        ).rejects.toMatchObject({
+            code: ProviderErrorCode.UserRejectedRequest,
+            message: "User rejected the signature request.",
+        });
+    });
+
+    it("should reject eth_signTypedData_v4 with 4001 error when enabled", async () => {
+        const provider = createE2EProvider(baseConfig);
+
+        setRejectSignature(provider, true);
+
+        const typedData = {
+            domain: { name: "Test", version: "1", chainId: 1 },
+            types: { Person: [{ name: "name", type: "string" }] },
+            primaryType: "Person",
+            message: { name: "Alice" },
+        };
+
+        await expect(
+            provider.request({
+                method: "eth_signTypedData_v4",
+                params: [TEST_ADDRESS, JSON.stringify(typedData)],
+            }),
+        ).rejects.toMatchObject({
+            code: ProviderErrorCode.UserRejectedRequest,
+            message: "User rejected the signature request.",
+        });
+    });
+
+    it("should allow signing when disabled", async () => {
+        const provider = createE2EProvider(baseConfig);
+
+        setRejectSignature(provider, true);
+        setRejectSignature(provider, false);
+
+        // Should work - personal_sign returns a signature
+        const signature = await provider.request<Hex>({
+            method: "personal_sign",
+            params: ["0x48656c6c6f", TEST_ADDRESS],
+        });
+        expect(signature).toMatch(/^0x[a-f0-9]+$/i);
+    });
+
+    it("should throw for provider without __internal", () => {
+        const fakeProvider = {
+            emit: vi.fn(),
+            on: vi.fn(),
+            removeListener: vi.fn(),
+            request: vi.fn(),
+        };
+
+        expect(() => setRejectSignature(fakeProvider, true)).toThrow(
+            "Provider does not support setRejectSignature",
+        );
+    });
+
+    it("should update internal state", () => {
+        const provider = createE2EProvider(baseConfig);
+
+        expect(provider.__internal.rejectSignature).toBe(false);
+
+        setRejectSignature(provider, true);
+        expect(provider.__internal.rejectSignature).toBe(true);
+
+        setRejectSignature(provider, false);
+        expect(provider.__internal.rejectSignature).toBe(false);
+    });
+});
+
+describe("setRejectTransaction", () => {
+    it("should reject eth_sendTransaction with 4001 error when enabled", async () => {
+        const provider = createE2EProvider(baseConfig);
+
+        setRejectTransaction(provider, true);
+
+        await expect(
+            provider.request({
+                method: "eth_sendTransaction",
+                params: [{ from: TEST_ADDRESS, to: TEST_ADDRESS, value: "0x1" }],
+            }),
+        ).rejects.toMatchObject({
+            code: ProviderErrorCode.UserRejectedRequest,
+            message: "User rejected the transaction request.",
+        });
+    });
+
+    it("should allow transactions when disabled (verifies rejection is lifted)", () => {
+        const provider = createE2EProvider(baseConfig);
+
+        // Enable then disable rejection
+        setRejectTransaction(provider, true);
+        setRejectTransaction(provider, false);
+
+        // Verify the internal state is correctly toggled
+        expect(provider.__internal.rejectTransaction).toBe(false);
+    });
+
+    it("should throw for provider without __internal", () => {
+        const fakeProvider = {
+            emit: vi.fn(),
+            on: vi.fn(),
+            removeListener: vi.fn(),
+            request: vi.fn(),
+        };
+
+        expect(() => setRejectTransaction(fakeProvider, true)).toThrow(
+            "Provider does not support setRejectTransaction",
+        );
+    });
+
+    it("should update internal state", () => {
+        const provider = createE2EProvider(baseConfig);
+
+        expect(provider.__internal.rejectTransaction).toBe(false);
+
+        setRejectTransaction(provider, true);
+        expect(provider.__internal.rejectTransaction).toBe(true);
+
+        setRejectTransaction(provider, false);
+        expect(provider.__internal.rejectTransaction).toBe(false);
+    });
+
+    it("should not affect signature methods", async () => {
+        const provider = createE2EProvider(baseConfig);
+
+        setRejectTransaction(provider, true);
+
+        // Signing should still work
+        const signature = await provider.request<Hex>({
+            method: "personal_sign",
+            params: ["0x48656c6c6f", TEST_ADDRESS],
+        });
+        expect(signature).toMatch(/^0x[a-f0-9]+$/i);
+    });
+});
+
+describe("ProviderRpcError", () => {
+    it("should have correct properties", () => {
+        const error = new ProviderRpcError(4001, "User rejected", { extra: "data" });
+
+        expect(error.code).toBe(4001);
+        expect(error.message).toBe("User rejected");
+        expect(error.data).toEqual({ extra: "data" });
+        expect(error.name).toBe("ProviderRpcError");
+        expect(error).toBeInstanceOf(Error);
+    });
+
+    it("should work without data parameter", () => {
+        const error = new ProviderRpcError(4100, "Unauthorized");
+
+        expect(error.code).toBe(4100);
+        expect(error.message).toBe("Unauthorized");
+        expect(error.data).toBeUndefined();
+    });
+});
+
+describe("ProviderErrorCode", () => {
+    it("should have correct EIP-1193 error codes", () => {
+        expect(ProviderErrorCode.UserRejectedRequest).toBe(4001);
+        expect(ProviderErrorCode.Unauthorized).toBe(4100);
+        expect(ProviderErrorCode.UnsupportedMethod).toBe(4200);
+        expect(ProviderErrorCode.Disconnected).toBe(4900);
+        expect(ProviderErrorCode.ChainDisconnected).toBe(4901);
     });
 });
