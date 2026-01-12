@@ -6,7 +6,7 @@ Lightweight E2E Provider for Web3 DApps - A virtual EIP-1193 provider that enabl
 
 ## Overview
 
-This library provides a **man-in-the-middle injected provider**. Your DApp keeps using the EIP-1193 interface, while reads go to Anvil and writes are signed locally.
+This library provides a **man-in-the-middle injected provider**. Your DApp keeps using the EIP-1193 interface, while reads go to [Anvil](https://getfoundry.sh/anvil/reference) and writes are signed locally.
 
 ### How It Works
 
@@ -365,6 +365,80 @@ All parameters are optional with sensible Anvil defaults:
 | Address      | `setSigningAccount(provider, "0x70997...")` | Look up matching Anvil account     |
 | Private Key  | `setSigningAccount(provider, "0x59c69...")` | Use any private key (66 chars)     |
 | viem Account | `setSigningAccount(provider, viemAccount)`  | Use a viem Account object directly |
+
+## Anvil Reference
+
+This library is designed to work by default with [Anvil](https://getfoundry.sh/anvil/reference), a fast local Ethereum development node from Foundry.
+
+### Installing Foundry
+
+```bash
+# Install Foundry (includes anvil, forge, cast, chisel)
+curl -L https://foundry.paradigm.xyz | bash
+
+# Run foundryup to install the latest version
+foundryup
+
+# Verify installation
+anvil --version
+```
+
+### Basic Usage
+
+```bash
+# Start Anvil with defaults (port 8545, 10 accounts, 10000 ETH each, chainId 31337)
+anvil
+```
+
+### Forking a Chain
+
+```bash
+# Fork mainnet
+anvil --fork-url https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+
+# Fork at a specific block
+anvil --fork-url https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY --fork-block-number 19000000
+
+# Fork Arbitrum
+anvil --fork-url https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY --chain-id 42161
+```
+
+### Changing the Port
+
+```bash
+# Single fork on custom port
+anvil --port 8546
+
+# Multiple forks (run in separate terminals)
+anvil --port 8545 --fork-url https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY   # Mainnet
+anvil --port 8546 --fork-url https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY   # Arbitrum
+anvil --port 8547 --fork-url https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY   # Optimism
+```
+
+### Chain Configuration
+
+```bash
+# Set chain ID (useful when not forking)
+anvil --chain-id 1337
+
+# Set block time (auto-mining interval in seconds)
+anvil --block-time 12
+
+# Disable auto-mining (mine on demand)
+anvil --no-mining
+```
+
+### Account Configuration
+
+```bash
+# Generate 20 accounts with 50000 ETH each
+anvil --accounts 20 --balance 50000
+
+# Use custom mnemonic
+anvil --mnemonic "test test test test test test test test test test test junk"
+```
+
+For the full reference, see the [Anvil documentation](https://getfoundry.sh/anvil/reference).
 
 ## Development
 
