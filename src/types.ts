@@ -151,3 +151,30 @@ export type AddressesWithCapabilities<withCapabilities extends boolean = false> 
     withCapabilities extends true
         ? readonly { address: `0x${string}`; capabilities: Record<string, unknown> }[]
         : readonly `0x${string}`[];
+
+/**
+ * EIP-1193 compliant provider error
+ * @see https://eips.ethereum.org/EIPS/eip-1193#provider-errors
+ */
+export class ProviderRpcError extends Error {
+    code: number;
+    data?: unknown;
+
+    constructor(code: number, message: string, data?: unknown) {
+        super(message);
+        this.name = "ProviderRpcError";
+        this.code = code;
+        this.data = data;
+    }
+}
+
+/**
+ * EIP-1193 Provider Error Codes
+ */
+export const ProviderErrorCode = {
+    UserRejectedRequest: 4001,
+    Unauthorized: 4100,
+    UnsupportedMethod: 4200,
+    Disconnected: 4900,
+    ChainDisconnected: 4901,
+} as const;

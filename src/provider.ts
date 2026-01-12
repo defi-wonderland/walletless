@@ -23,6 +23,7 @@ import {
     isWalletMethod,
     isWriteMethod,
 } from "./constants.js";
+import { ProviderErrorCode, ProviderRpcError } from "./types.js";
 
 type EventListeners = {
     [K in keyof ProviderEvents]: Set<ProviderEvents[K]>;
@@ -95,6 +96,8 @@ interface InternalState {
     currentChain: CompatibleChain;
     rpcUrl: string;
     rpcUrls: Record<number, string>;
+    rejectSignature: boolean;
+    rejectTransaction: boolean;
 }
 
 /**
@@ -108,6 +111,8 @@ export interface E2EProviderWithInternal extends E2EProvider {
         currentChain: CompatibleChain;
         rpcUrl: string;
         state: ProviderState;
+        rejectSignature: boolean;
+        rejectTransaction: boolean;
     };
 }
 
@@ -185,6 +190,8 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         currentChain: initialChain,
         rpcUrl: initialRpcUrl,
         rpcUrls: rpcUrlsConfig,
+        rejectSignature: false,
+        rejectTransaction: false,
     };
 
     const state: ProviderState = {
@@ -280,6 +287,29 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
      */
     async function handleWriteMethod<T>(method: string, params?: unknown[]): Promise<T> {
         log("incoming", { method, params });
+
+        // Check for transaction rejection
+        if (method === "eth_sendTransaction" && internal.rejectTransaction) {
+            throw new ProviderRpcError(
+                ProviderErrorCode.UserRejectedRequest,
+                "User rejected the transaction request.",
+            );
+        }
+
+        // Check for signature rejection
+        const signingMethods = [
+            "personal_sign",
+            "eth_sign",
+            "eth_signTypedData",
+            "eth_signTypedData_v3",
+            "eth_signTypedData_v4",
+        ];
+        if (signingMethods.includes(method) && internal.rejectSignature) {
+            throw new ProviderRpcError(
+                ProviderErrorCode.UserRejectedRequest,
+                "User rejected the signature request.",
+            );
+        }
 
         let result: T;
 
@@ -570,6 +600,18 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
             set currentChain(newChain: CompatibleChain) {
                 updateChain(newChain);
             },
+            get rejectSignature(): boolean {
+                return internal.rejectSignature;
+            },
+            set rejectSignature(value: boolean) {
+                internal.rejectSignature = value;
+            },
+            get rejectTransaction(): boolean {
+                return internal.rejectTransaction;
+            },
+            set rejectTransaction(value: boolean) {
+                internal.rejectTransaction = value;
+            },
         },
     };
 }
@@ -685,4 +727,72 @@ export function setSigningAccount(provider: E2EProvider, account: SigningAccount
 
     // Emit accountsChanged event to notify listeners
     provider.emit("accountsChanged", [newAccount.address]);
+}
+
+/**
+ * Sets whether the provider should reject signature requests.
+ * When enabled, signing attempts will throw a 4001 "User Rejected Request" error.
+ *
+ * Affects: personal_sign, eth_sign, eth_signTypedData, eth_signTypedData_v3, eth_signTypedData_v4
+ *
+ * @param provider - The E2E provider instance
+ * @param reject - Whether to reject signature requests
+ *
+ * @example
+ * ```ts
+ * const provider = createE2EProvider();
+ *
+ * // Enable rejection
+ * setRejectSignature(provider, true);
+ *
+ * // This will throw: ProviderRpcError { code: 4001, message: "User rejected the signature request." }
+ * await provider.request({ method: 'personal_sign', params: ['0x...', '0x...'] });
+ *
+ * // Disable rejection
+ * setRejectSignature(provider, false);
+ * ```
+ */
+export function setRejectSignature(provider: E2EProvider, reject: boolean): void {
+    const providerWithInternal = provider as E2EProviderWithInternal;
+
+    if (!providerWithInternal.__internal) {
+        throw new Error(
+            "Provider does not support setRejectSignature. Make sure you're using a provider created with createE2EProvider.",
+        );
+    }
+
+    providerWithInternal.__internal.rejectSignature = reject;
+}
+
+/**
+ * Sets whether the provider should reject transaction requests (eth_sendTransaction).
+ * When enabled, transaction attempts will throw a 4001 "User Rejected Request" error.
+ *
+ * @param provider - The E2E provider instance
+ * @param reject - Whether to reject transaction requests
+ *
+ * @example
+ * ```ts
+ * const provider = createE2EProvider();
+ *
+ * // Enable rejection
+ * setRejectTransaction(provider, true);
+ *
+ * // This will throw: ProviderRpcError { code: 4001, message: "User rejected the transaction request." }
+ * await provider.request({ method: 'eth_sendTransaction', params: [{ to: '0x...', value: '0x1' }] });
+ *
+ * // Disable rejection
+ * setRejectTransaction(provider, false);
+ * ```
+ */
+export function setRejectTransaction(provider: E2EProvider, reject: boolean): void {
+    const providerWithInternal = provider as E2EProviderWithInternal;
+
+    if (!providerWithInternal.__internal) {
+        throw new Error(
+            "Provider does not support setRejectTransaction. Make sure you're using a provider created with createE2EProvider.",
+        );
+    }
+
+    providerWithInternal.__internal.rejectTransaction = reject;
 }

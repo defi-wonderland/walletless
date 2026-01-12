@@ -1,5 +1,7 @@
 # @wonderland/walletless
 
+[![image](https://img.shields.io/npm/v/@wonderland/walletless.svg?style=flat-square)](https://www.npmjs.org/package/@wonderland/walletless)
+
 Lightweight E2E Provider for Web3 DApps - A virtual EIP-1193 provider that enables deterministic, high-performance E2E testing.
 
 ## Overview
@@ -132,6 +134,8 @@ import {
     createE2EProvider,
     disconnect,
     setChain,
+    setRejectSignature,
+    setRejectTransaction,
     setSigningAccount,
 } from "@wonderland/walletless";
 // Switch by viem Account object (for custom accounts)
@@ -157,6 +161,12 @@ console.log(ANVIL_ACCOUNTS[0].privateKey);
 
 // Disconnect (emits disconnect event)
 disconnect(provider);
+
+// Reject signatures (throws 4001 "User Rejected Request" error)
+setRejectSignature(provider, true);
+
+// Reject transactions (throws 4001 "User Rejected Request" error)
+setRejectTransaction(provider, true);
 ```
 
 ### Multichain + chain switching
