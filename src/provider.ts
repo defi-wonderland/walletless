@@ -114,6 +114,12 @@ export interface E2EProviderWithInternal extends E2EProvider {
         rejectSignature: boolean;
         rejectTransaction: boolean;
     };
+    // Control methods (callable from browser context)
+    setSigningAccount(account: SigningAccountInput): void;
+    setRejectSignature(reject: boolean): void;
+    setRejectTransaction(reject: boolean): void;
+    setChain(chainId: number): void;
+    disconnect(): void;
 }
 
 /**
@@ -571,6 +577,47 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
         on,
         removeListener,
         emit,
+
+        // Control methods (callable from browser context, e.g. via page.evaluate)
+        setSigningAccount(account: SigningAccountInput): void {
+            const newAccount = resolveAccount(account);
+            updateSigningAccount(newAccount);
+            emit("accountsChanged", [newAccount.address]);
+        },
+
+        setRejectSignature(reject: boolean): void {
+            internal.rejectSignature = reject;
+        },
+
+        setRejectTransaction(reject: boolean): void {
+            internal.rejectTransaction = reject;
+        },
+
+        setChain(chainId: number): void {
+            // Validate chain is supported
+            if (!state.supportedChainIds.includes(chainId)) {
+                throw new Error(
+                    `Chain ${chainId} is not supported. Supported chains: ${state.supportedChainIds.join(", ")}`,
+                );
+            }
+
+            // Find chain config
+            const newChain = internal.chains.find((c) => c.id === chainId);
+            if (!newChain) {
+                throw new Error(`Chain config not found for chain ID ${chainId}`);
+            }
+
+            updateChain(newChain);
+
+            // Emit chainChanged event
+            const chainIdHex = `0x${chainId.toString(16)}` as Hex;
+            emit("chainChanged", chainIdHex);
+        },
+
+        disconnect(): void {
+            emit("disconnect", { code: 4900, message: "Disconnected" });
+        },
+
         __internal: {
             get account(): PrivateKeyAccount | Account {
                 return internal.account;
@@ -646,42 +693,26 @@ export function createE2EProvider(config: E2EProviderConfig = {}): E2EProviderWi
  * ```
  */
 export function setChain(provider: E2EProvider, chainId: number): void {
-    const providerWithInternal = provider as E2EProviderWithInternal;
-
-    if (!providerWithInternal.__internal) {
+    const p = provider as E2EProviderWithInternal;
+    if (typeof p.setChain !== "function") {
         throw new Error(
             "Provider does not support setChain. Make sure you're using a provider created with createE2EProvider.",
         );
     }
-
-    const { chains, state } = providerWithInternal.__internal;
-
-    // Validate chain is supported
-    if (!state.supportedChainIds.includes(chainId)) {
-        throw new Error(
-            `Chain ${chainId} is not supported. Supported chains: ${state.supportedChainIds.join(", ")}`,
-        );
-    }
-
-    // Find chain config
-    const newChain = chains.find((c) => c.id === chainId);
-    if (!newChain) {
-        throw new Error(`Chain config not found for chain ID ${chainId}`);
-    }
-
-    // Update internal state (this recreates the wallet client)
-    providerWithInternal.__internal.currentChain = newChain;
-
-    // Emit chainChanged event
-    const chainIdHex = `0x${chainId.toString(16)}` as Hex;
-    provider.emit("chainChanged", chainIdHex);
+    p.setChain(chainId);
 }
 
 /**
  * Triggers a disconnect event on the provider
  */
 export function disconnect(provider: E2EProvider): void {
-    provider.emit("disconnect", { code: 4900, message: "Disconnected" });
+    const p = provider as E2EProviderWithInternal;
+    if (typeof p.disconnect !== "function") {
+        throw new Error(
+            "Provider does not support disconnect. Make sure you're using a provider created with createE2EProvider.",
+        );
+    }
+    p.disconnect();
 }
 
 /**
@@ -714,19 +745,13 @@ export function disconnect(provider: E2EProvider): void {
  * ```
  */
 export function setSigningAccount(provider: E2EProvider, account: SigningAccountInput): void {
-    const providerWithInternal = provider as E2EProviderWithInternal;
-
-    if (!providerWithInternal.__internal) {
+    const p = provider as E2EProviderWithInternal;
+    if (typeof p.setSigningAccount !== "function") {
         throw new Error(
             "Provider does not support setSigningAccount. Make sure you're using a provider created with createE2EProvider.",
         );
     }
-
-    const newAccount = resolveAccount(account);
-    providerWithInternal.__internal.account = newAccount;
-
-    // Emit accountsChanged event to notify listeners
-    provider.emit("accountsChanged", [newAccount.address]);
+    p.setSigningAccount(account);
 }
 
 /**
@@ -753,15 +778,13 @@ export function setSigningAccount(provider: E2EProvider, account: SigningAccount
  * ```
  */
 export function setRejectSignature(provider: E2EProvider, reject: boolean): void {
-    const providerWithInternal = provider as E2EProviderWithInternal;
-
-    if (!providerWithInternal.__internal) {
+    const p = provider as E2EProviderWithInternal;
+    if (typeof p.setRejectSignature !== "function") {
         throw new Error(
             "Provider does not support setRejectSignature. Make sure you're using a provider created with createE2EProvider.",
         );
     }
-
-    providerWithInternal.__internal.rejectSignature = reject;
+    p.setRejectSignature(reject);
 }
 
 /**
@@ -786,13 +809,11 @@ export function setRejectSignature(provider: E2EProvider, reject: boolean): void
  * ```
  */
 export function setRejectTransaction(provider: E2EProvider, reject: boolean): void {
-    const providerWithInternal = provider as E2EProviderWithInternal;
-
-    if (!providerWithInternal.__internal) {
+    const p = provider as E2EProviderWithInternal;
+    if (typeof p.setRejectTransaction !== "function") {
         throw new Error(
             "Provider does not support setRejectTransaction. Make sure you're using a provider created with createE2EProvider.",
         );
     }
-
-    providerWithInternal.__internal.rejectTransaction = reject;
+    p.setRejectTransaction(reject);
 }
