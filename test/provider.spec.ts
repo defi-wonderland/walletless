@@ -895,6 +895,142 @@ describe("setRejectTransaction", () => {
     });
 });
 
+describe("provider control methods (direct API)", () => {
+    describe("provider.setRejectTransaction", () => {
+        it("should reject eth_sendTransaction with 4001 error when enabled", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            provider.setRejectTransaction(true);
+
+            await expect(
+                provider.request({
+                    method: "eth_sendTransaction",
+                    params: [{ from: TEST_ADDRESS, to: TEST_ADDRESS, value: "0x1" }],
+                }),
+            ).rejects.toMatchObject({
+                code: ProviderErrorCode.UserRejectedRequest,
+                message: "User rejected the transaction request.",
+            });
+        });
+
+        it("should allow transactions after disabling rejection", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            provider.setRejectTransaction(true);
+            provider.setRejectTransaction(false);
+
+            expect(provider.__internal.rejectTransaction).toBe(false);
+        });
+    });
+
+    describe("provider.setRejectSignature", () => {
+        it("should reject personal_sign with 4001 error when enabled", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            provider.setRejectSignature(true);
+
+            await expect(
+                provider.request({
+                    method: "personal_sign",
+                    params: ["0x48656c6c6f", TEST_ADDRESS],
+                }),
+            ).rejects.toMatchObject({
+                code: ProviderErrorCode.UserRejectedRequest,
+                message: "User rejected the signature request.",
+            });
+        });
+
+        it("should allow signing after disabling rejection", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            provider.setRejectSignature(true);
+            provider.setRejectSignature(false);
+
+            const signature = await provider.request<Hex>({
+                method: "personal_sign",
+                params: ["0x48656c6c6f", TEST_ADDRESS],
+            });
+            expect(signature).toMatch(/^0x[a-f0-9]+$/i);
+        });
+    });
+
+    describe("provider.setSigningAccount", () => {
+        it("should switch account by index and emit accountsChanged", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("accountsChanged", handler);
+            provider.setSigningAccount(3);
+
+            expect(handler).toHaveBeenCalledWith([ANVIL_ACCOUNTS[3]!.address]);
+        });
+
+        it("should update eth_accounts after switching", async () => {
+            const provider = createE2EProvider(baseConfig);
+
+            provider.setSigningAccount(5);
+
+            const accounts = await provider.request<Address[]>({ method: "eth_accounts" });
+            expect(accounts).toEqual([ANVIL_ACCOUNTS[5]!.address]);
+        });
+
+        it("should throw for invalid index", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => provider.setSigningAccount(-1 as 0)).toThrow(
+                "Invalid Anvil account index",
+            );
+        });
+    });
+
+    describe("provider.setChain", () => {
+        it("should emit chainChanged event with hex chain ID", () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+            const handler = vi.fn();
+
+            provider.on("chainChanged", handler);
+            provider.setChain(42161);
+
+            expect(handler).toHaveBeenCalledWith("0xa4b1");
+        });
+
+        it("should update eth_chainId response after switching", async () => {
+            const provider = createE2EProvider({
+                ...baseConfig,
+                chains: [mainnet, arbitrum],
+            });
+
+            provider.setChain(42161);
+
+            const chainId = await provider.request<string>({ method: "eth_chainId" });
+            expect(chainId).toBe("0xa4b1");
+        });
+
+        it("should throw for unsupported chain", () => {
+            const provider = createE2EProvider(baseConfig);
+
+            expect(() => provider.setChain(137)).toThrow(
+                "Chain 137 is not supported. Supported chains: 1",
+            );
+        });
+    });
+
+    describe("provider.disconnect", () => {
+        it("should emit disconnect event", () => {
+            const provider = createE2EProvider(baseConfig);
+            const handler = vi.fn();
+
+            provider.on("disconnect", handler);
+            provider.disconnect();
+
+            expect(handler).toHaveBeenCalledWith({ code: 4900, message: "Disconnected" });
+        });
+    });
+});
+
 describe("ProviderRpcError", () => {
     it("should have correct properties", () => {
         const error = new ProviderRpcError(4001, "User rejected", { extra: "data" });
