@@ -10,7 +10,8 @@ import type {
     E2EProviderConfig,
 } from "./types.js";
 import { DEFAULT_ANVIL_PRIVATE_KEY, DEFAULT_CHAIN } from "./constants.js";
-import { createE2EProvider, disconnect as disconnectProvider } from "./provider.js";
+import { disconnect as disconnectProvider } from "./provider-controls.js";
+import { createE2EProvider } from "./provider.js";
 
 /**
  * Configuration for creating a new provider internally

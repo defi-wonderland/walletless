@@ -126,11 +126,69 @@ const balance = await provider.request({
 });
 ```
 
-### Test control helpers
+### Test control methods (recommended)
+
+The provider object exposes control methods directly. This is the **recommended API**, especially for E2E tests where the provider lives in the browser and you interact via `page.evaluate()`.
+
+```typescript
+import { ANVIL_ACCOUNTS, createE2EProvider } from "@wonderland/walletless";
+
+const provider = createE2EProvider();
+
+// Switch signing account by index (0-9)
+provider.setSigningAccount(0); // First Anvil account
+provider.setSigningAccount(5); // Sixth Anvil account
+
+// Switch by Anvil address (looks up matching private key)
+provider.setSigningAccount("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+
+// Switch by raw private key
+provider.setSigningAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
+
+// Switch chain
+provider.setChain(42161); // Arbitrum
+
+// Reject signatures (throws 4001 "User Rejected Request" error)
+provider.setRejectSignature(true);
+
+// Reject transactions (throws 4001 "User Rejected Request" error)
+provider.setRejectTransaction(true);
+
+// Disconnect (emits disconnect event)
+provider.disconnect();
+
+// Access Anvil accounts directly
+console.log(ANVIL_ACCOUNTS[0].address); // 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+console.log(ANVIL_ACCOUNTS[0].privateKey);
+```
+
+#### Using with Playwright (browser context)
+
+When testing with Playwright, expose the provider on `window` and call methods via `page.evaluate()`:
+
+```typescript
+// In your app setup (e.g. wagmi config)
+const provider = createE2EProvider({ ... });
+(window as any).__e2eTestProvider = provider;
+
+// In your Playwright test
+await page.evaluate(() => {
+    window.__e2eTestProvider.setRejectTransaction(true);
+});
+// Now the next transaction attempt will throw a 4001 error
+
+await page.evaluate(() => {
+    window.__e2eTestProvider.setSigningAccount(3);
+});
+// Now the provider uses the 4th Anvil account
+```
+
+### Test control helpers (standalone functions)
+
+Standalone helper functions are also available. They delegate to the provider methods above and are useful when you have a direct reference to the provider in the same JS context.
 
 ```typescript
 import {
-    ANVIL_ACCOUNTS,
     createE2EProvider,
     disconnect,
     setChain,
@@ -138,35 +196,14 @@ import {
     setRejectTransaction,
     setSigningAccount,
 } from "@wonderland/walletless";
-// Switch by viem Account object (for custom accounts)
-import { privateKeyToAccount } from "viem/accounts";
 
 const provider = createE2EProvider();
 
-// Switch signing account by index (0-9)
-setSigningAccount(provider, 0); // First Anvil account
-setSigningAccount(provider, 5); // Sixth Anvil account
-
-// Switch by Anvil address (looks up matching private key)
-setSigningAccount(provider, "0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
-
-// Switch by raw private key
-setSigningAccount(provider, "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
-
-setSigningAccount(provider, privateKeyToAccount("0x..."));
-
-// Access Anvil accounts directly
-console.log(ANVIL_ACCOUNTS[0].address); // 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-console.log(ANVIL_ACCOUNTS[0].privateKey);
-
-// Disconnect (emits disconnect event)
-disconnect(provider);
-
-// Reject signatures (throws 4001 "User Rejected Request" error)
+setSigningAccount(provider, 0);
+setChain(provider, 42161);
 setRejectSignature(provider, true);
-
-// Reject transactions (throws 4001 "User Rejected Request" error)
 setRejectTransaction(provider, true);
+disconnect(provider);
 ```
 
 ### Multichain + chain switching
